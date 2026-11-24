@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function admin() {
+   return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+    && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin';
+  }
+  function area(a) { return a in ['Mesa de partes','Dirección general','Administración','Secretaría','Calidad','Secretaría académica','Unidad académica','Bienestar y empleabilidad','Investigación e innovación tecnológica','Construcción Civil','Producción Agropecuaria','Arquitectura de Plataformas y Servicios de Tecnologías de la Información']; }
+  function state(s) { return s in ['Recibido','En trámite','Atendido']; }
+  function token(t) { return t is string && t.matches('^[a-f0-9]{32}$'); }
+  function previous() { return exists(/databases/$(database)/documents/config/counter) ? get(/databases/$(database)/documents/config/counter).data.value : 0; }
+  match /admins/{uid} {
+   allow get: if request.auth != null && request.auth.uid == uid;
+   allow list, write: if false;
+  }
+  function linkedRegistration() {
+   let link=getAfter(/databases/$(database)/documents/registroVinculo/actual).data;
+   return token(link.token) && link.value==previous()+1
+    && !exists(/databases/$(database)/documents/expedientes/$(link.token))
+    && getAfter(/databases/$(database)/documents/expedientes/$(link.token)).data.id==link.value
+    && getAfter(/databases/$(database)/documents/config/counter).data.value==link.value;
+  }
+  match /config/counter {
+   allow get: if true;
+   allow create, update: if request.resource.data.keys().hasOnly(['value'])
+    && request.resource.data.value is int && request.resource.data.value==previous()+1
+    && request.resource.data.value<=100000000 && linkedRegistration();
+   allow list, delete: if false;
+  }
+  // Internal proof binds the counter and record, without revealing the tracking token.
+  match /registroVinculo/actual {
+   allow read, delete: if false;
+   allow create, update: if request.resource.data.keys().hasOnly(['value','token']) && linkedRegistration();
+  }
+  match /expedientes/{key} {
+   function valid() {
+    let d=request.resource.data;
+    let counter=getAfter(/databases/$(database)/documents/config/counter).data;
+    return token(key) && d.keys().hasOnly(['id','time','subject','sender','type','number','area','folios','filename','state','log','internalNumber','storagePath'])
+     && d.id is int && d.id == previous()+1 && d.id == counter.value && getAfter(/databases/$(database)/documents/registroVinculo/actual).data.token == key
+     && d.time is int && d.time > 0
+     && d.subject is string && d.subject.size()>0 && d.subject.size()<=220
+     && d.sender is string && d.sender.size()>0 && d.sender.size()<=180
+     && d.type in ['Solicitud','Oficio','Carta','Informe','Otro']
+     && d.number is string && d.number.size()<=70 && area(d.area)
+     && d.folios is int && d.folios>=1 && d.folios<=99999
+     && d.filename is string && d.filename.size()<=255
+     && d.internalNumber is string && d.internalNumber.size()<=50
+     && ((d.filename=='' && d.storagePath=='') || (d.filename!='' && d.storagePath=='attachments/'+key))
+     && d.state=='Recibido' && d.log is list && d.log.size()==1
+     && d.log[0] == {'time':d.time,'state':'Recibido','area':d.area,'note':'Ingreso por mesa de partes.'};
+   }
+   function move() {
+    let d=request.resource.data;
+    let last=d.log[d.log.size()-1];
+    return d.diff(resource.data).affectedKeys().hasOnly(['state','area','log'])
+     && state(d.state) && area(d.area) && d.log is list
+     && d.log.size()==resource.data.log.size()+1
+     && d.log == resource.data.log.concat([last])
+     && last.keys().hasOnly(['time','state','area','note'])
+     && last.time is int && last.time>=resource.data.log[resource.data.log.size()-1].time
+     && last.state==d.state && last.area==d.area && last.note=='';
+   }
+   allow get: if token(key);
+   allow list: if admin();
+   allow create: if valid();
+   allow update: if admin() && move();
+   allow delete: if false;
+  }
+  match /notasInternas/{key} {
+   allow get: if admin();
+   allow create, update: if admin() && token(key)
+    && request.resource.data.keys().hasOnly(['notes']) && request.resource.data.notes is map
+    && getAfter(/databases/$(database)/documents/expedientes/$(key)).data.id > 0;
+   allow list, delete: if false;
+  }
+ }
+}

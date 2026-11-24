@@ -1,0 +1,1 @@
+{"firestore":{"rules":"firestore.rules"},"storage":{"rules":"storage.rules"},"hosting":{"public":"docs","ignore":["**/.*"],"headers":[{"source":"**","headers":[{"key":"Cache-Control","value":"no-cache"},{"key":"Referrer-Policy","value":"no-referrer"}]}]}}

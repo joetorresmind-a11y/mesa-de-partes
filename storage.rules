@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+ match /b/{bucket}/o {
+  function admin() {
+   return request.auth != null && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))
+    && firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.role == 'admin';
+  }
+  match /attachments/{key} {
+   allow get: if key.matches('^[a-f0-9]{32}$');
+   allow list: if false;
+   allow create: if resource == null && key.matches('^[a-f0-9]{32}$') && request.resource.size>0 && request.resource.size<=10*1024*1024
+    && request.resource.contentType in ['application/pdf','image/jpeg','image/png'];
+   allow update: if false;
+   allow delete: if admin();
+  }
+ }
+}
