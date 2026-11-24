@@ -2,17 +2,24 @@
 
 Portal del IESTP Manuel Scorza Torre, Acobamba, Huancavelica. Edición para GitHub Pages y Firebase: acceso público sin registro, administrador en la esquina superior derecha, doce áreas de destino, numeración automática, cargo imprimible, consulta con clave y derivación de expedientes.
 
-## Publicar en GitHub Pages
+## Publicar en GitHub Pages (método sencillo)
 
-1. Extrae el ZIP y abre esta carpeta en Visual Studio Code. `README.md`, `docs`, `firebase.json` y `.github` deben estar en la raíz del repositorio, sin una segunda carpeta envolvente.
-2. Crea un repositorio en GitHub y sube **el contenido extraído**, no el archivo ZIP. Incluye `.github/workflows/pages.yml`. No subas expedientes reales ni claves privadas.
-3. En el repositorio, abre **Settings → Pages → Build and deployment → Source → GitHub Actions**.
-4. En **Actions → Publicar mesa de partes → Run workflow**, selecciona `main`. También se ejecuta con cada cambio enviado a `main`.
-5. Cuando el flujo termine, abre la dirección que muestra **Settings → Pages**. Todas las rutas de imágenes, estilos y módulos son relativas: sirven tanto para un dominio como para un sitio bajo el nombre del repositorio.
+1. Extrae el ZIP. Sube a tu repositorio **el contenido**, no el ZIP ni una carpeta envolvente. En la raíz deben verse `index.html`, `docs`, `README.md` y `firebase.json`.
+2. En GitHub, abre **Settings → Pages → Build and deployment**.
+3. Elige **Source: Deploy from a branch**, **Branch: main**, **Folder: /(root)** y pulsa **Save**.
+4. Espera a que termine la publicación de GitHub Pages y abre la dirección que aparece en esa sección. Actualiza con Ctrl+F5 si conservas la versión anterior.
 
-El flujo publica únicamente `docs/`. GitHub aloja la interfaz; Firebase almacena y controla los datos. No necesitas mantener Node.js, Visual Studio Code o tu computadora encendidos después de publicar.
+El archivo `index.html` de la raíz lleva automáticamente al portal de `docs/`, conservando la ruta del trámite. Así no se muestra el README como página de inicio. También puedes seleccionar `main → /docs`; esa carpeta contiene el portal completo.
 
-**Alternativa sin Actions personalizado:** si subes archivos desde el navegador y no incluyes `.github`, elige **Deploy from a branch → main → /docs → Save**. El contenido del sitio es el mismo. Utiliza un solo método de publicación.
+### Si prefieres GitHub Actions
+
+Incluye `.github/workflows/pages.yml`, elige **Settings → Pages → Source → GitHub Actions** y ejecuta **Actions → Publicar mesa de partes → Run workflow** sobre `main`. El flujo publica solamente `docs/`. Usa un único método de publicación. No cambies de método si el actual ya funciona.
+
+GitHub aloja la interfaz; Firebase almacena y controla los datos. Una vez publicado no necesitas mantener Node.js ni tu computadora encendidos. No subas expedientes ni claves privadas al repositorio.
+
+### Si se muestra el README
+
+Es señal de que Pages está mostrando la raíz sin encontrar un `index.html` de entrada. Sube el `index.html` de esta edición a la raíz, junto a `README.md`, manteniendo la carpeta `docs/`. También puedes corregirlo seleccionando `/docs` como carpeta de publicación. No borres tus datos de Firebase.
 
 ## Activar Firebase una sola vez
 

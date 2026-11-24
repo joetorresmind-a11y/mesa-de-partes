@@ -5,7 +5,7 @@ Fecha: 24 de noviembre de 2026.
 ## Ejecutadas correctamente
 
 - Comprobación de sintaxis de JavaScript y del servidor estático.
-- Ocho pruebas locales: rutas relativas para repositorios, contenido del artefacto público, configuración de publicación, registro sin cuenta, reintento sin duplicación, validación de datos, consulta con clave, separación de notas, conflicto de revisión y navegación sin conexión (algunas pruebas agrupan varios casos).
+- Nueve pruebas locales: entrada desde la raíz con conservación del fragmento, rutas relativas para repositorios, contenido del artefacto público, configuración de publicación, registro sin cuenta, reintento sin duplicación, validación de datos, consulta con clave, separación de notas, conflicto de revisión y navegación sin conexión (algunas pruebas agrupan varios casos).
 - Emuladores oficiales de Firestore y Storage con un proyecto ficticio `demo-mesa-tests`: aceptación de registro transaccional, rechazo de contador aislado, rechazo de un registro con correlativo reutilizado, lectura individual con token, rechazo de lista pública, rechazo de asignación pública de administrador, derivación administrativa, notas privadas, lectura administrativa y ausencia del token en el contador público.
 - Storage: aceptación de PDF, lectura individual, rechazo de sobrescritura, rechazo de tipo HTML y rechazo del listado público de adjuntos.
 

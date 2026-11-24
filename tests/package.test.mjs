@@ -19,3 +19,8 @@ test('GitHub solo publica docs y Firebase apunta al mismo contenido',async()=>{
  const wf=await read('.github/workflows/pages.yml');assert(wf.includes('path: docs'));
  assert.equal(JSON.parse(await read('firebase.json')).hosting.public,'docs');
 });
+
+test('La raíz abre el portal y conserva el fragmento de navegación',async()=>{
+ const html=await read('index.html');assert(html.includes("new URL('./docs/',location.href)"));assert(html.includes('location.hash'));
+ assert(html.includes('href="./docs/"'));await readFile(new URL('../.nojekyll',import.meta.url));
+});

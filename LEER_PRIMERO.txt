@@ -1,11 +1,9 @@
-MESA DE PARTES — EDICIÓN GITHUB PAGES
+CORRECCIÓN: GITHUB MUESTRA LAS INSTRUCCIONES EN VEZ DEL PORTAL
 
-1. Extrae el ZIP y abre la carpeta que contiene README.md en Visual Studio Code.
-2. Sube el contenido a GitHub, incluyendo docs y .github. No subas el ZIP.
-3. Settings > Pages > Source > GitHub Actions.
-4. Actions > Publicar mesa de partes > Run workflow.
-5. Publica las nuevas reglas firestore.rules y storage.rules en Firebase.
-6. Crea el administrador en Authentication y su permiso admins/UID.
+1. Extrae este ZIP.
+2. En tu repositorio mesa-de-partes, sube el contenido extraído. index.html debe estar junto a README.md, no dentro de otra carpeta.
+3. Conserva la carpeta docs con sus archivos, imágenes y configuración Firebase.
+4. Settings > Pages > Deploy from a branch > main > /(root) > Save.
+5. Espera a que GitHub termine de publicar y actualiza con Ctrl+F5.
 
-El detalle está en README.md. No hay contraseñas administrativas en el repositorio.
-Esta entrega no está publicada todavía. No es necesario mantener la PC encendida cuando GitHub Pages esté configurado.
+El nuevo index.html abre el portal automáticamente. No necesitas cambiar Firebase para corregir la portada. Para registrar y gestionar expedientes, deben seguir activados los servicios y las reglas descritos en README.md.
