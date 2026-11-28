@@ -1,0 +1,4 @@
+project_id = "mesa-partes-manuel-scorza"
+
+[functions.adjuntos]
+verify_jwt = false

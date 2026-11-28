@@ -1,1 +1,114 @@
-<!doctype html><html lang="es-PE"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#102e52"><meta name="description" content="Mesa de partes digital del IESTP Manuel Scorza Torre, Acobamba. Presentación y seguimiento de expedientes."><meta name="referrer" content="no-referrer"><title>Mesa de Partes | Manuel Scorza Torre</title><link rel="stylesheet" href="app.css"></head><body><a class="skip" href="#main">Saltar al contenido</a><div class="institution-bar">Educación superior tecnológica pública <span>Acobamba, Huancavelica</span></div><header><a href="#inicio" class="brand"><img class="official-logo" src="instituto.png" alt="Instituto de Educación Superior Tecnológico Público Manuel Scorza Torre"></a><div class="header-actions"><span class="place">Acobamba · Huancavelica</span><a id="admin-link" class="admin-link" href="#admin">Administrador ↗</a></div></header><nav aria-label="Navegación principal"><a href="#inicio">Inicio</a><a href="#registro">Presentar documento</a><a href="#consulta">Consultar trámite</a><a id="inbox" hidden href="#bandeja">Bandeja de expedientes</a><a href="#instituto">El instituto</a></nav><div id="accessbar" hidden></div><main id="main"><section class="panel"><h1>Mesa de partes digital</h1><p>Cargando los servicios del Instituto Manuel Scorza Torre…</p><noscript>Activa JavaScript para registrar y consultar expedientes.</noscript></section></main><footer><div><strong>Manuel Scorza Torre</strong><br>Instituto de Educación Superior Tecnológico Público<br>Acobamba · Huancavelica</div><a href="https://iestmst.edu.pe/presentacion/" target="_blank" rel="noopener noreferrer">Portal institucional ↗</a><span>Mesa de partes digital<br>Conserva tu cargo de recepción.</span></footer><script type="module" src="app.js"></script><script nomodule>document.querySelector("main").textContent="Actualiza tu navegador para utilizar la mesa de partes.";</script></body></html>
+<!doctype html>
+<html lang="es-PE">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0a2850" />
+    <meta
+      name="description"
+      content="Mesa de partes digital del Instituto Manuel Scorza Torre. Presenta documentos y consulta respuestas con tu clave de seguimiento."
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Mesa de partes | Manuel Scorza Torre</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Saltar al contenido</a>
+    <div class="topbar">
+      <div class="container">
+        <span>Instituto de Educación Superior Tecnológico Público</span
+        ><span>Acobamba · Huancavelica</span>
+      </div>
+    </div>
+    <header class="header">
+      <div class="container header-row">
+        <a class="brand" href="#inicio" aria-label="Manuel Scorza Torre, inicio"
+          ><img
+            src="instituto.png"
+            alt="Instituto Manuel Scorza Torre"
+            width="290"
+            height="84"
+        /></a>
+        <div class="header-caption">
+          Mesa de partes<span>Atención digital al ciudadano</span>
+        </div>
+        <a id="access-link" class="button soft small" href="#acceso"
+          >Acceso institucional</a
+        >
+      </div>
+    </header>
+    <nav class="nav" aria-label="Navegación principal">
+      <div class="container">
+        <a href="#inicio">Inicio</a><a href="#registro">Presentar documento</a
+        ><a href="#consulta">Consultar trámite</a
+        ><a href="#ayuda">Orientación</a
+        ><a id="desk-link" href="#bandeja" hidden>Mi bandeja</a>
+      </div>
+    </nav>
+    <main id="main" class="container" tabindex="-1">
+      <div class="loading">Cargando la mesa de partes…</div>
+      <noscript
+        >Activa JavaScript para presentar o consultar documentos.</noscript
+      >
+    </main>
+    <footer class="footer">
+      <div class="container footer-grid">
+        <div>
+          <span class="footer-label">IESTP MANUEL SCORZA TORRE</span>
+          <h2>Una institución cerca de ti.</h2>
+          <p>Formación tecnológica pública en Acobamba, Huancavelica.</p>
+          <a
+            href="https://iestmst.edu.pe/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Visitar el sitio institucional</a
+          >
+        </div>
+        <div>
+          <h3>Contacto y atención</h3>
+          <p>
+            Av. Universitaria N.° 258<br />Barrio Cocharcas, Acobamba<br />Huancavelica,
+            Perú
+          </p>
+          <a href="tel:+51964159700">964 159 700</a>
+          <p>Horario publicado: 8:00 a. m. – 4:00 p. m.</p>
+          <a
+            href="https://iestmst.edu.pe/contacts/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Directorio institucional</a
+          >
+        </div>
+        <div>
+          <h3>Información institucional</h3>
+          <a
+            href="https://www.gob.pe/minedu"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Ministerio de Educación del Perú</a
+          >
+          <p>
+            Creación institucional: R. M. N.° 448-89-ED, del 12 de julio de
+            1989.
+          </p>
+          <a
+            href="https://iestmst.edu.pe/presentacion/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Consultar reseña y resolución citada</a
+          ><a href="#privacidad">Privacidad de los datos</a>
+        </div>
+      </div>
+      <div class="container footer-bottom">
+        <span>Manuel Scorza Torre · Mesa de partes digital</span
+        ><span>Conserva tu cargo y tu clave de seguimiento.</span>
+      </div>
+    </footer>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="modal">
+      <div id="modal-content"></div>
+      <button class="button soft" id="close-modal" type="button">Cerrar</button>
+    </dialog>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

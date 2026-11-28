@@ -1,464 +1,763 @@
-import { firebaseConfig, ADMIN_USERNAME, ADMIN_EMAIL } from './firebase-config.js';
-let initializeApp, getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
- getFirestore, collection, doc, getDoc, getDocs, query, where, runTransaction,
- getStorage, ref, uploadBytes, getDownloadURL, deleteObject, getMetadata;
-
-const main = document.querySelector('main');
-const states = ['Recibido', 'En trámite', 'Atendido'];
-const destinations = {
-  'Gestión institucional': ['Mesa de partes', 'Dirección general', 'Administración', 'Secretaría', 'Calidad'],
-  'Gestión académica': ['Secretaría académica', 'Unidad académica', 'Bienestar y empleabilidad', 'Investigación e innovación tecnológica'],
-  'Coordinaciones de programas': ['Construcción Civil', 'Producción Agropecuaria', 'Arquitectura de Plataformas y Servicios de Tecnologías de la Información']
+import { cloud } from "./data.js";
+import {
+  AREAS,
+  STATES,
+  TYPES,
+  esc,
+  date,
+  code,
+  trackingKey,
+  randomKey,
+  validateApplicant,
+  validateRequest,
+  validateFile,
+  parseKey,
+  friendly,
+  csv,
+} from "./domain.js";
+const main = document.getElementById("main");
+let identity = { role: "public" },
+  routeId = 0,
+  lastKey = "",
+  cachedRecords = [],
+  pageNumber = 1;
+document.querySelector(".skip").addEventListener("click", (event) => {
+  event.preventDefault();
+  main.focus();
+  main.scrollIntoView({ block: "start" });
+});
+try {
+  lastKey = sessionStorage.getItem("mst-tracking") || "";
+} catch {}
+const paths = {
+  file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M8 13h8 M8 17h5",
+  search: "M21 21l-4.4-4.4 M19 10.5a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0",
+  check: "M20 6L9 17l-5-5",
+  shield: "M12 3l8 4v6c0 5-8 9-8 9s-8-4-8-9V7z M8 12l3 3 5-6",
+  clock: "M12 8v5l3 2 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
+  send: "M22 2L9 15 M22 2l-7 20-4-9-9-4z",
+  download: "M12 3v12 M7 10l5 5 5-5 M4 16v5h16v-5",
+  users:
+    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
+  inbox: "M4 4h16v16H4z M4 13h5l2 3h2l2-3h5",
+  lock: "M5 10h14v11H5z M8 10V6a4 4 0 0 1 8 0v4",
+  help: "M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3 M12 17h.01 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
+  print: "M6 8V3h12v5 M6 17H3V9h18v8h-3 M6 14h12v7H6z",
+  copy: "M9 9h12v12H9z M15 9V3H3v12h6",
+  edit: "M12 20H4V12 M15 5l4 4 M9 15l3-1L21 5l-4-4-9 9z",
+  logout: "M9 3H3v18h6 M9 12h12 M17 8l4 4-4 4",
 };
-const programs = [
-  { slug: 'agropecuaria', area: 'Producción Agropecuaria', summary: 'Manejo de cultivos, producción pecuaria y gestión de empresas agroalimentarias.' },
-  { slug: 'construccion', area: 'Construcción Civil', summary: 'Diseño estructural, materiales, seguridad y ejecución de obras.' },
-  { slug: 'tecnologias', area: 'Arquitectura de Plataformas y Servicios de Tecnologías de la Información', summary: 'Programación, desarrollo de software, administración de plataformas digitales y soporte técnico.' }
-];
-const milestones = [
-  ['1989', 'El instituto fue creado el 12 de julio mediante la Resolución Ministerial N.º 448-89-ED.'],
-  ['1990', 'Las clases comenzaron en abril con 101 estudiantes de Agropecuaria, distribuidos en dos secciones.'],
-  ['1994', 'El instituto adoptó el nombre Manuel Scorza Torre.'],
-  ['1998', 'Se autorizó la carrera de Construcción Civil.'],
-  ['2000', 'Se autorizó la carrera de Computación e Informática.']
-];
-
-let app, auth, db, storage;
-let firebaseReady = false;
-let firebaseInitError = '';
-let authReadyResolve;
-const authReady = new Promise(resolve => { authReadyResolve = resolve; });
-let currentUser = null;
-let session = { admin: false, signedIn: false };
-let trackingKey = '';
-async function waitForFirebase(){let timer;try {await Promise.race([authReady,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('La conexión tarda demasiado. Revisa Internet y vuelve a intentar.')),15000)})])}finally{clearTimeout(timer)}}
-try {trackingKey=sessionStorage.getItem('mst-tracking')||''} catch {}
-let connected = false;
-let version = 0;
-
-async function initializeFirebase() {
- try {
-  const base='https://www.gstatic.com/firebasejs/13.4.0/';
-  const modules=await Promise.all(['app','auth','firestore','storage'].map(name=>import(base+'firebase-'+name+'.js')));
-  ({initializeApp}=modules[0]);
-  ({getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut}=modules[1]);
-  ({getFirestore,collection,doc,getDoc,getDocs,query,where,runTransaction}=modules[2]);
-  ({getStorage,ref,uploadBytes,getDownloadURL,deleteObject,getMetadata}=modules[3]);
-  app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app);storage=getStorage(app);
-  await new Promise((resolve,reject)=>{let unsubscribe=onAuthStateChanged(auth,()=>{unsubscribe();resolve()},reject)});
-  currentUser=auth.currentUser;firebaseReady=true;
- } catch(error) {firebaseInitError=friendlyError(error)}
- finally {authReadyResolve()}
+const icon = (name) =>
+  `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`;
+const options = (items, selected) =>
+  items
+    .map(
+      (x) =>
+        `<option value="${esc(x)}" ${x === selected ? "selected" : ""}>${esc(x)}</option>`,
+    )
+    .join("");
+const badge = (s) =>
+  `<span class="badge ${String(s)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/ /g, "-")}">${esc(s)}</span>`;
+const field = (label, name, attrs = "", full = false) =>
+  `<label class="${full ? "full" : ""}">${label} <span class="required">*</span><input name="${name}" ${attrs} required></label>`;
+const heading = (title, subtitle, extra = "") =>
+  `<div class="pagehead"><div><div class="breadcrumb"><a href="#inicio">Inicio</a> / ${esc(title)}</div><h1>${esc(title)}</h1><p>${subtitle}</p></div>${extra}</div>`;
+function toast(text) {
+  const box = document.getElementById("toast");
+  box.textContent = text;
+  box.hidden = false;
+  setTimeout(() => (box.hidden = true), 5000);
 }
-initializeFirebase();
-
-function destinationOptions(selected) {
-  return Object.entries(destinations).map(([group, names]) =>
-    '<optgroup label="' + esc(group) + '">' + opts(names, selected) + '</optgroup>'
-  ).join('');
+function modal(content) {
+  document.getElementById("modal-content").innerHTML = content;
+  document.getElementById("modal").showModal();
 }
-const fmt = t => new Date(t).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short' });
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const opts = (a, v) => a.map(s => '<option ' + (s === v ? 'selected' : '') + '>' + esc(s) + '</option>').join('');
-const code = r => 'MST-' + new Date(r.time).toLocaleDateString('en-US', { year: 'numeric', timeZone: 'America/Lima' }) + '-' + String(r.id).padStart(6, '0');
-const internalNumber = r => r.internalNumber || ('DOC-' + new Date(r.time).toLocaleDateString('en-US', { year: 'numeric', timeZone: 'America/Lima' }) + '-' + String(r.id).padStart(6, '0'));
-const randomHex = bytes => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), b => b.toString(16).padStart(2, '0')).join('');
-
-function friendlyError(error) {
-  const code = error?.code || '';
-  const map = {
-    'auth/invalid-credential': 'Usuario o contraseña incorrectos.',
-    'auth/user-not-found': 'La cuenta de administrador todavía no existe en Firebase Authentication.',
-    'auth/wrong-password': 'Usuario o contraseña incorrectos.',
-    'auth/too-many-requests': 'Firebase bloqueó temporalmente los intentos. Espera y vuelve a probar.',
-    'auth/unauthorized-domain': 'Este dominio no está autorizado. Agrega localhost o 127.0.0.1 en Firebase Authentication → Configuración → Dominios autorizados.',
-    'auth/network-request-failed': 'No hay conexión con Firebase. Revisa Internet y vuelve a intentar.',
-    'auth/operation-not-allowed': 'Activa Correo electrónico/contraseña en Firebase Authentication.',
-    'auth/configuration-not-found': 'Falta activar Authentication en tu proyecto Firebase.',
-    'permission-denied': 'Firebase rechazó la operación. Revisa que hayas publicado firestore.rules y storage.rules.',
-    'storage/unauthorized': 'Firebase Storage rechazó el archivo. Revisa storage.rules y que Storage esté habilitado.',
-    'storage/bucket-not-found': 'No se encuentra el bucket de Firebase Storage. Habilita Storage y verifica el bucket configurado.',
-    'unavailable': 'Firebase no está disponible en este momento. Vuelve a intentar.'
-  };
-  return map[code] || error?.message || 'No se pudo completar la operación. Revisa la configuración de Firebase.';
-}
-
-function ensureFirebase() {
-  if (!firebaseReady) throw new Error(firebaseInitError || 'No se pudo iniciar Firebase. Revisa web/firebase-config.js.');
-}
-
-async function refreshSession() {
-  await waitForFirebase();
-  currentUser = auth ? auth.currentUser : null;
-  if (!currentUser) {
-    session = { admin: false, signedIn: false };
-    return session;
-  }
+document.getElementById("close-modal").onclick = () =>
+  document.getElementById("modal").close();
+function remember(key) {
+  lastKey = key;
   try {
-    const adminSnap = await getDoc(doc(db, 'admins', currentUser.uid));
-    session = { admin: adminSnap.exists() && adminSnap.data().role === 'admin', signedIn: true };
-  } catch (error) {
-    session = { admin: false, signedIn: true };
-    throw error;
-  }
-  return session;
+    sessionStorage.setItem("mst-tracking", key);
+  } catch {}
 }
-
-function safeRecord(record, isAdmin) {
-  const copy = { ...record, log: (record.log || []).map(item => ({ ...item })) };
-  if (!isAdmin) copy.log = copy.log.map(({ area, state, time }) => ({ area, state, time, note: '' }));
-  return copy;
-}
-
-async function registerDocument(formData, token) {
-  ensureFirebase();
-  const subject = String(formData.get('subject') || '').trim();
-  const sender = String(formData.get('sender') || '').trim();
-  const type = String(formData.get('type') || 'Solicitud');
-  const number = String(formData.get('number') || '').trim();
-  const area = String(formData.get('area') || 'Mesa de partes');
-  const folios = Number(formData.get('folios'));
-  const file = formData.get('file');
-  const allowedAreas = Object.values(destinations).flat();
-  if (!subject || subject.length > 220 || !sender || sender.length > 180) throw new Error('Completa el asunto y el nombre del remitente.');
-  if (!['Solicitud', 'Oficio', 'Carta', 'Informe', 'Otro'].includes(type)) throw new Error('Selecciona un tipo de documento válido.');
-  if (!allowedAreas.includes(area)) throw new Error('Selecciona un área de destino válida.');
-  if (!Number.isInteger(folios) || folios < 1 || folios > 99999) throw new Error('El número de folios debe ser un entero mayor que cero.');
-  const hasFile = file instanceof File && file.size > 0;
-  if (hasFile) {
-    const validType = ['application/pdf', 'image/jpeg', 'image/png'].includes(file.type);
-    if (!validType || file.size > 10 * 1024 * 1024) throw new Error('Adjunta un PDF, JPG o PNG de hasta 10 MB.');
-  }
-
-  const docId = token || randomHex(16);
-  const existing=await getDoc(doc(db,'expedientes',docId));
-  if(existing.exists()) return {id:existing.data().id,key:existing.data().id+'-'+docId};
-  const time = Date.now();
-  const filename = hasFile ? file.name.slice(0, 255) : '';
-  const storagePath = hasFile ? 'attachments/' + docId : '';
-
-  if (hasFile) {
-    try {
-      let uploaded=false;
-      try {const metadata=await getMetadata(ref(storage,storagePath));uploaded=metadata.size===file.size && metadata.contentType===file.type; if(!uploaded) throw new Error('El adjunto cambió después del intento anterior. Abre un nuevo formulario.')}
-      catch(error){if(error.code!=='storage/object-not-found') throw error}
-      if(!uploaded) await uploadBytes(ref(storage, storagePath), file, { contentType: file.type, customMetadata: { expediente: docId } });
-    } catch (error) {
-      throw new Error(friendlyError(error));
-    }
-  }
-
-  let id;
-  try {
-    id = await runTransaction(db, async transaction => {
-      const counterRef = doc(db, 'config', 'counter');
-      const recordRef = doc(db, 'expedientes', docId);
-      const counterSnap = await transaction.get(counterRef);
-      const next = counterSnap.exists() ? Number(counterSnap.data().value) + 1 : 1;
-      const year = new Date(time).toLocaleDateString('en-US', { year: 'numeric', timeZone: 'America/Lima' });
-      const record = {
-        id: next, time, subject, sender, type, number, area, folios, filename,
-        state: 'Recibido',
-        internalNumber: 'DOC-' + year + '-' + String(next).padStart(6, '0'),
-        storagePath,
-        log: [{ time, state: 'Recibido', area, note: 'Ingreso por mesa de partes.' }]
-      };
-      transaction.set(counterRef, { value: next });
-      transaction.set(doc(db,'registroVinculo','actual'), {value: next, token: docId});
-      transaction.set(recordRef, record);
-      return next;
-    });
-  } catch (error) {
-    // Keep the uploaded file on uncertain commits; administrators can clean orphan files.
-    throw new Error(friendlyError(error));
-  }
-  return { id, key: id + '-' + docId };
-}
-
-async function findRecord(id) {
-  const numericId = Number(id);
-  if (!Number.isSafeInteger(numericId) || numericId < 1) throw new Error('Número de expediente no válido.');
-  if (session.admin) {
-    const result = await getDocs(query(collection(db, 'expedientes'), where('id', '==', numericId)));
-    if (result.empty) return null;
-    const item = result.docs[0];
-    const record=safeRecord(item.data(),true);
-    const notes=await getDoc(doc(db,'notasInternas',item.id));
-    if(notes.exists()) for(const [i,note] of Object.entries(notes.data().notes||{})) if(record.log[Number(i)]) record.log[Number(i)].note=note;
-    return {...record,_docId:item.id};
-  }
-  const match = trackingKey.match(/^(\d+)-([a-f0-9]{32})$/);
-  if (!match || Number(match[1]) !== numericId) throw new Error('Ingresa la clave completa que aparece en tu cargo de recepción.');
-  const snap = await getDoc(doc(db, 'expedientes', match[2]));
-  if (!snap.exists() || Number(snap.data().id) !== numericId) throw new Error('No se encontró el expediente. Verifica la clave de seguimiento.');
-  return { ...safeRecord(snap.data(), false), _docId: snap.id };
-}
-
-async function api(path, options = {}) {
-  await waitForFirebase();
-  ensureFirebase();
-  const method = (options.method || 'GET').toUpperCase();
-  if (path === 'session') {
-    await refreshSession();
-    return { ...session, local: false, firebase: true };
-  }
-  if (path === 'login' && method === 'POST') {
-    let input;
-    try { input = JSON.parse(options.body || '{}'); } catch { throw new Error('Completa usuario y contraseña.'); }
-    if (String(input.username || '').trim().toLowerCase() !== ADMIN_USERNAME) throw new Error('Usuario o contraseña incorrectos.');
-    try {
-      await signInWithEmailAndPassword(auth, ADMIN_EMAIL, String(input.password || ''));
-      await refreshSession();
-      if (!session.admin) {
-        await signOut(auth);
-        session = { admin: false, signedIn: false };
-        throw new Error('La cuenta inició sesión, pero no tiene permisos de administrador. Revisa el documento admins en Firestore.');
-      }
-      return { ok: true };
-    } catch (error) { throw new Error(friendlyError(error)); }
-  }
-  if (path === 'logout' && method === 'POST') {
-    await signOut(auth);
-    session = { admin: false, signedIn: false };
-    return { ok: true };
-  }
-  if (path === 'register' && method === 'POST') return registerDocument(options.body,options.token);
-  if (path === 'records' && method === 'GET') {
-    if (!session.admin) throw new Error('Acceso administrativo requerido.');
-    const result = await getDocs(collection(db, 'expedientes'));
-    return result.docs.map(item => ({ ...safeRecord(item.data(), true), _docId: item.id })).sort((a, b) => b.id - a.id);
-  }
-  const match = path.match(/^record\/(\d+)(?:\/(move|file))?$/);
-  if (match) {
-    const [, id, action] = match;
-    const record = await findRecord(id);
-    if (!record) throw new Error('Expediente no encontrado.');
-    if (action === 'file' && method === 'GET') {
-      if (!record.storagePath) throw new Error('Este expediente no tiene archivo adjunto.');
-      try { return await getDownloadURL(ref(storage, record.storagePath)); }
-      catch (error) { throw new Error(friendlyError(error)); }
-    }
-    if (action === 'move' && method === 'POST') {
-      if (!session.admin) throw new Error('Solo el administrador puede derivar expedientes.');
-      let input;
-      try { input = JSON.parse(options.body || '{}'); } catch { throw new Error('Movimiento no válido.'); }
-      const allowedAreas = Object.values(destinations).flat();
-      if (!states.includes(input.state) || !allowedAreas.includes(input.area) || typeof input.note !== 'string' || input.note.length > 1000) throw new Error('Revisa el estado, área y observación.');
-      const recordRef = doc(db, 'expedientes', record._docId);
-      await runTransaction(db, async transaction => {
-        const notesRef=doc(db,'notasInternas',record._docId);
-        const snap = await transaction.get(recordRef);
-        const notesSnap=await transaction.get(notesRef);
-        if (!snap.exists()) throw new Error('El expediente ya no existe.');
-        const latest = snap.data();
-        if (input.revision !== latest.log.length) throw new Error('El expediente cambió. Actualiza la página y vuelve a intentar.');
-        const entry = { time: Date.now(), state: input.state, area: input.area, note: '' };
-        const notes=notesSnap.exists()?notesSnap.data().notes||{}:{};
-        if(input.note.trim()) notes[String(latest.log.length)]=input.note.trim();
-        transaction.set(notesRef,{notes});
-        transaction.update(recordRef, { state: input.state, area: input.area, log: [...latest.log, entry] });
-      });
-      return { ok: true };
-    }
-    return record;
-  }
-  throw new Error('Operación no reconocida.');
-}
-
-const paths = [
-  'M3 7h7l2 2h9v10H3z M3 7V5h7l2 2h7v2',
-  'M4 5h16v14H4z M4 13h4l2 3h4l2-3h4',
-  'M12 3a9 9 0 1 0 9 9a9 9 0 0 0-9-9z M12 7v6l4 2',
-  'M3 12l6 6L21 6'
-];
-
-function entry(r) {
-  return '<a class="record" href="#exp/' + r.id + '"><div class="row"><small>' + code(r) + ' · ' + esc(internalNumber(r)) + '</small><span class="status">' + esc(r.state) + '</span></div><strong>' + esc(r.subject) + '</strong><small>' + esc(r.sender) + ' · ' + esc(r.area) + '</small></a>';
-}
-
-function formPage(selected) {
-  return '<h1 class="page">Nuevo expediente</h1><form class="panel narrow" id="new"><h2>Datos del documento</h2><div class="fields"><label>Tipo de documento<select name="type">' + opts(['Solicitud', 'Oficio', 'Carta', 'Informe', 'Otro']) + '</select></label><label>Número interno de documento<span class="auto-field">Correlativo automático al registrar</span></label></div><label>Referencia del remitente (opcional)<input name="number" maxlength="70" placeholder="Ej. Oficio 025-2026"></label><label>Asunto<input required name="subject" maxlength="220"></label><label>Nombre del remitente o razón social<input required name="sender" maxlength="180"></label><div class="fields"><label>Área de destino<select name="area">' + destinationOptions(selected) + '</select></label><label>Número de folios<input required type="number" name="folios" value="1" min="1" max="99999"></label></div><label>Documento adjunto (opcional)<input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png"><small>PDF, JPG o PNG de hasta 10 MB.</small></label><div><button>Registrar expediente</button></div><output role="status"></output></form>';
-}
-
-function institutionPage() {
-  return '<h1 class="page">El instituto</h1><section class="institution-intro"><div><span class="eyebrow">Acobamba · Huancavelica</span><h2>Manuel Scorza Torre</h2><p>El instituto forma profesionales técnicos mediante clases y prácticas vinculadas con la producción agropecuaria, la construcción y los servicios de tecnología.</p></div><figure><img src="sede.webp" alt="Vista exterior del edificio del instituto"><figcaption>Sede del IESTP Manuel Scorza Torre en Acobamba.</figcaption></figure></section><div class="sectionhead"><h2>Programas de estudio</h2></div><div class="programs">' + programs.map(p => '<article class="panel"><h3>' + esc(p.area) + '</h3><p>' + esc(p.summary) + '</p><a class="link" href="#registro/' + p.slug + '">Registrar expediente para este programa →</a></article>').join('') + '</div><div class="sectionhead"><h2>Reseña histórica</h2></div><section class="panel"><ol class="timeline">' + milestones.map(([year, event]) => '<li><strong>' + year + '</strong><div>' + event + '</div></li>').join('') + '</ol><a class="link" href="https://iestmst.edu.pe/presentacion/" target="_blank" rel="noopener">Ver presentación, fotografía y reseña en el portal del instituto ↗</a></section>';
-}
-
-function home(rows) {
-  const nums = [rows.length, ...states.map(s => rows.filter(r => r.state === s).length)];
-  return '<section class="hero"><div class="portal-copy"><span class="eyebrow">Gestión documental</span><h1>Mesa de partes</h1><p>Registro y seguimiento de expedientes del instituto.</p><a class="btn" href="#registro"><b>＋</b> Nuevo expediente</a><a class="about-link" href="#instituto">Conoce el instituto →</a></div><img class="campus" src="sede.webp" alt="Sede del instituto en Acobamba"></section><div class="sectionhead"><h2>Resumen de expedientes</h2><span class="date">' + new Date().toLocaleDateString('es-PE', { dateStyle: 'long', timeZone: 'America/Lima' }) + '</span></div><div class="metrics">' + ['Total registrado', 'Recibidos', 'En trámite', 'Atendidos'].map((s, i) => '<a class="metric" href="#bandeja' + (i ? '/' + (i - 1) : '') + '"><span class="icon m' + i + '"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="' + paths[i] + '"/></svg></span><div><strong>' + nums[i] + '</strong><small>' + s + '</small></div></a>').join('') + '</div><div class="lower"><section class="panel"><div class="sectionhead"><h2>Últimos expedientes</h2><a class="link" href="#bandeja">Ver bandeja →</a></div>' + (rows.slice(0, 3).map(entry).join('') || '<div class="empty">Aún no hay expedientes registrados.</div>') + '</section><section class="card"><small style="color:white">Archivo documental</small><a href="#bandeja">Consultar expedientes →</a></section></div>';
-}
-
-function detail(r) {
-  const pairs = [
-    ['Fecha de ingreso', fmt(r.time)], ['Remitente', r.sender], ['N.º de documento', internalNumber(r)],
-    ['Tipo de documento', r.type], ...(r.number ? [['Referencia del remitente', r.number]] : []),
-    ['Asunto', r.subject], ['Folios', r.folios], ['Destino inicial', r.log[0].area], ['Adjunto', r.filename || 'Sin adjunto']
-  ];
-  return '<a class="link noprint" href="#bandeja">← Volver a la bandeja</a><div class="panel narrow report"><img class="receipt-logo" src="instituto.png" alt="Instituto Manuel Scorza Torre"><small>IESTP Manuel Scorza Torre · Acobamba, Huancavelica</small><h1 class="page">Cargo de recepción</h1><span class="pill">Expediente</span> <strong>' + code(r) + '</strong><dl>' + pairs.map(([k, v]) => '<dt>' + k + '</dt><dd>' + esc(v) + '</dd>').join('') + '</dl></div><div class="noprint"><div class="tools"><button id="print">Imprimir cargo / PDF</button>' + (r.filename ? '<button class="light" id="download">Descargar adjunto</button>' : '') + '</div><section class="panel narrow"><div class="sectionhead"><h2>Seguimiento</h2><span class="status">' + esc(r.state) + '</span></div><p>Área responsable · <strong>' + esc(r.area) + '</strong></p><ol class="timeline">' + r.log.slice().reverse().map(e => '<li><strong>' + esc(e.state) + ' · ' + esc(e.area) + '</strong><br><small>' + fmt(e.time) + '</small><div>' + esc(e.note) + '</div></li>').join('') + '</ol><form id="move"><h2>Registrar movimiento</h2><div class="fields"><label>Estado<select name="state">' + opts(states, r.state) + '</select></label><label>Área responsable<select name="area">' + destinationOptions(r.area) + '</select></label></div><label>Observación interna (solo administración)<textarea name="note" maxlength="1000"></textarea></label><div><button>Guardar movimiento</button></div><output role="status"></output></form></section></div>';
-}
-
-function bindForm(id, handler) {
+function bind(id, handler) {
   const form = document.getElementById(id);
-  form.onsubmit = async event => {
-    event.preventDefault();
-    const button = form.querySelector('button');
-    const output = form.querySelector('output');
-    button.disabled = true;
-    if (output) output.textContent = 'Procesando…';
-    form.setAttribute('aria-busy','true');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!form.reportValidity()) return;
+    const data = new FormData(form),
+      buttons = [...form.querySelectorAll("button")],
+      out = form.querySelector("output");
+    buttons.forEach((b) => (b.disabled = true));
+    form.setAttribute("aria-busy", "true");
+    if (out) out.textContent = "Procesando…";
     try {
-      await handler(form, new FormData(form));
+      await handler(data, form);
+      if (out?.isConnected) out.textContent = "";
     } catch (error) {
-      if (output) output.textContent = friendlyError(error);
-      else alert(friendlyError(error));
+      if (out) out.textContent = friendly(error);
+      else toast(friendly(error));
     } finally {
-      form.removeAttribute('aria-busy');
-      if (button.isConnected) button.disabled = false;
+      buttons.forEach((b) => (b.disabled = false));
+      form.removeAttribute("aria-busy");
     }
   };
 }
-
-async function register(form, data) {
-  form.dataset.token ||= randomHex(16);
-  const receipt = await api('register', { method: 'POST', body: data, token: form.dataset.token });
-  trackingKey = receipt.key;
-  try {sessionStorage.setItem('mst-tracking',trackingKey)} catch {}
-  location.hash = 'exp/' + receipt.id;
-}
-
-function publicHome() {
-  return '<section class="welcome"><div class="welcome-copy"><span class="eyebrow">Servicios a la comunidad educativa</span><h1>Tus trámites,<br><em>más cerca.</em></h1><p>Mesa de partes digital del Instituto Manuel Scorza Torre. Presenta tu documento sin crear una cuenta y consulta cada avance con la clave de tu cargo.</p><div class="hero-actions"><a class="btn" href="#registro">Presentar documento <span>↗</span></a><a class="secondary-action" href="#consulta">Consultar trámite →</a></div></div><figure class="welcome-photo"><img src="sede.webp" alt="Sede del Instituto Manuel Scorza Torre en Acobamba"><figcaption><span>Nuestro instituto</span><strong>Formación técnica en Acobamba</strong><a href="#instituto">Conócenos ↗</a></figcaption></figure></section><section class="service-grid" aria-label="Servicios digitales"><a href="#registro" class="service"><span class="service-symbol">＋</span><div><h2>Presenta tu documento</h2><p>Registra tu solicitud y obtén tu cargo de recepción.</p></div><span>↗</span></a><a href="#consulta" class="service"><span class="service-symbol">⌕</span><div><h2>Consulta tu trámite</h2><p>Revisa el estado usando tu clave de seguimiento.</p></div><span>↗</span></a></section><section class="academic"><div class="sectionhead"><div><span class="eyebrow">Formación profesional</span><h2>Nuestros programas de estudio</h2></div><a class="link" href="#instituto">Explora el instituto →</a></div><div class="programs">' + programs.map(p => '<article class="panel"><h3>' + esc(p.area) + '</h3><p>' + esc(p.summary) + '</p><a class="link" href="#registro/' + p.slug + '">Enviar documento al programa →</a></article>').join('') + '</div></section>' + helpSection();
-}
-
-function setupConsult() {
-  main.innerHTML = '<h1 class="page">Consultar mi trámite</h1><form class="panel narrow" id="lookup"><label>Clave de seguimiento<input name="key" required autocomplete="off" spellcheck="false"></label><small>La encontrarás en tu cargo de recepción.</small><div><button>Consultar expediente</button></div><output role="status"></output></form>';
-  bindForm('lookup', async (form, data) => {
-    const key = String(data.get('key') || '').trim();
-    const match = key.match(/^(\d+)-([a-f0-9]{32})$/);
-    if (!match) throw new Error('Copia la clave completa del cargo de recepción.');
-    trackingKey = key;
-    try {sessionStorage.setItem('mst-tracking',trackingKey)} catch {}
-    await api('record/' + match[1]);
-    location.hash = 'exp/' + match[1];
+function header() {
+  const staff = ["area", "admin"].includes(identity.role);
+  const link = document.getElementById("access-link");
+  link.href = staff ? "#bandeja" : "#acceso";
+  link.textContent = staff
+    ? identity.role === "admin"
+      ? "Administración"
+      : "Mi área"
+    : "Acceso institucional";
+  document.getElementById("desk-link").hidden = !staff;
+  document.querySelectorAll(".nav a").forEach((a) => {
+    if (a.hash === (location.hash || "#inicio"))
+      a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
   });
 }
-
-async function render() {
-  const current = ++version;
-  main.setAttribute('tabindex','-1');
-  const [page = 'inicio', id] = location.hash.slice(1).split('/');
-  document.querySelectorAll('nav a').forEach(a => {
-    a.removeAttribute('aria-current');
-    if (a.hash === '#' + (page === 'exp' ? 'consulta' : page || 'inicio')) a.setAttribute('aria-current', 'page');
-  });
-  try {
-    if ((page === 'admin' || page === 'bandeja') && !session.admin) {
-      main.innerHTML = '<h1 class="page">Acceso de administrador</h1><form id="login" class="panel narrow"><p>Ingresa con tu usuario y contraseña para gestionar los expedientes.</p><label>Usuario<input name="username" autocomplete="username" required></label><label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label><div><button>Ingresar</button></div><output role="status"></output><a href="#inicio">Volver al inicio →</a></form>';
-      bindForm('login', async (form, data) => {
-        await api('login', { method: 'POST', body: JSON.stringify({ username: data.get('username'), password: data.get('password') }) });
-        await start();
-        location.hash = 'bandeja';
-      });
-      return;
+function home() {
+  return `<section class="hero"><div class="hero-copy"><span class="eyebrow">Atención al ciudadano</span><h1>Tu trámite,<br><span>más cerca.</span></h1><p>Presenta tus documentos al Instituto Manuel Scorza Torre y consulta las respuestas de tu área de atención, desde un solo lugar.</p><div class="actions"><a class="button" href="#registro">${icon("send")} Presentar documento</a><a class="button outline" href="#consulta">Consultar trámite</a></div><p class="hero-note">${icon("shield")} Presentación sin crear una cuenta</p></div><figure class="hero-photo"><img src="sede.webp" alt="Sede del Instituto Manuel Scorza Torre en Acobamba"><figcaption class="photo-label"><span>EDUCACIÓN SUPERIOR TECNOLÓGICA PÚBLICA</span><strong>Manuel Scorza Torre</strong></figcaption></figure></section><section class="service-grid" aria-label="Servicios de mesa de partes">${[
+    [
+      "file",
+      "Presenta tu solicitud",
+      "Completa tus datos y adjunta tu documento.",
+      "#registro",
+    ],
+    [
+      "search",
+      "Sigue tu expediente",
+      "Revisa el estado y descarga las respuestas.",
+      "#consulta",
+    ],
+    [
+      "help",
+      "Te orientamos",
+      "Conoce los requisitos y nuestros contactos.",
+      "#ayuda",
+    ],
+  ]
+    .map(
+      ([i, t, p, u]) =>
+        `<a href="${u}" class="service-card"><span class="icon-box">${icon(i)}</span><div><h2>${t}</h2><p>${p}</p></div></a>`,
+    )
+    .join(
+      "",
+    )}</section><div class="section-title"><div><span class="eyebrow">Un proceso claro</span><h2>De tu solicitud a la respuesta</h2><p>Conserva tu clave para consultar el trámite cuando lo necesites.</p></div></div><section class="steps-overview">${[
+    [
+      "file",
+      "Prepara tus datos",
+      "Ten a mano tu DNI, celular, correo electrónico y el documento que presentarás.",
+    ],
+    [
+      "send",
+      "Recibe tu cargo",
+      "Al confirmar el registro obtendrás un número de expediente y una clave personal.",
+    ],
+    [
+      "download",
+      "Consulta y descarga",
+      "El área encargada podrá responderte y publicar documentos en tu seguimiento.",
+    ],
+  ]
+    .map(([i, t, p]) => `<article>${icon(i)}<h3>${t}</h3><p>${p}</p></article>`)
+    .join(
+      "",
+    )}</section><section class="support-banner">${icon("help")}<div><h2>¿Necesitas orientación para tu trámite?</h2><p>Comunícate con el instituto o consulta los requisitos antes de presentar tu documento.</p></div><a class="button white" href="#ayuda">Ver orientación</a></section>`;
+}
+function requestForm() {
+  return (
+    heading(
+      "Presentar documento",
+      "Completa los datos solicitados. Los campos con asterisco son obligatorios.",
+    ) +
+    `<div class="form-layout"><form class="panel" id="request-form" novalidate><ol class="wizard-tabs" aria-label="Pasos del formulario"><li class="active"><b>1</b>Datos personales</li><li><b>2</b>Documento</li><li><b>3</b>Confirmación</li></ol><fieldset data-step="0"><legend>Datos del solicitante</legend><p class="hint">Usaremos estos datos para gestionar tu solicitud y contactarte.</p><div class="fields">${field("Nombres", "names", 'autocomplete="given-name" minlength="2" maxlength="80"', true)}${field("Apellido paterno", "lastName1", 'autocomplete="family-name" minlength="2" maxlength="60"')}${field("Apellido materno", "lastName2", 'minlength="2" maxlength="60"')}${field("DNI", "dni", 'inputmode="numeric" pattern="[0-9]{8}" minlength="8" maxlength="8" placeholder="8 dígitos"')}${field("Celular", "mobile", 'type="tel" autocomplete="tel-national" inputmode="tel" pattern="9[0-9]{8}" minlength="9" maxlength="9" placeholder="9 dígitos"')}${field("Correo electrónico", "email", 'type="email" autocomplete="email" maxlength="180" placeholder="nombre@correo.com"', true)}${field("Domicilio", "address", 'autocomplete="street-address" minlength="8" maxlength="240" placeholder="Dirección, distrito y provincia"', true)}</div></fieldset><fieldset data-step="1" hidden><legend>Documento y destino</legend><p class="hint">Selecciona el área responsable. El número de expediente se genera al registrar.</p><div class="fields"><label>Tipo de documento <span class="required">*</span><select name="type" required>${options(TYPES, "Solicitud")}</select></label><label>Número de folios <span class="required">*</span><input name="folios" type="number" min="1" max="99999" value="1" required></label><label class="full">Área de destino <span class="required">*</span><select name="area" required>${options(AREAS, "Mesa de partes")}</select></label><label class="full">Referencia del documento <small>Opcional</small><input name="number" maxlength="70" placeholder="Por ejemplo, Oficio 025-2026"></label>${field("Asunto", "subject", 'minlength="5" maxlength="220" placeholder="Describe brevemente tu solicitud"', true)}<label class="full">Detalle de la solicitud <small>Opcional</small><textarea name="description" maxlength="3000" placeholder="Información adicional para el área responsable"></textarea></label><label class="file-box full">Documento principal <span class="required">*</span><input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required><small>PDF, JPG o PNG · máximo 10 MB. Incluye el documento completo y legible.</small><span class="file-info" id="file-info"></span></label></div></fieldset><fieldset data-step="2" hidden><legend>Revisa antes de enviar</legend><p class="hint">Comprueba que tus datos y el área de destino sean correctos.</p><dl class="review-grid" id="review"></dl><label class="checkbox"><input type="checkbox" name="consent" required><span>Declaro que los datos y documentos presentados son correctos y autorizo su uso para gestionar este trámite, conforme al <a href="#privacidad" target="_blank" rel="noopener">aviso de privacidad</a>.</span></label><div class="notice">Al registrar, se generará tu cargo de recepción. La recepción no implica aprobación de la solicitud.</div></fieldset><div class="form-actions"><button class="button outline" id="back-step" type="button" hidden>Anterior</button><button class="button" id="next-step" type="button">Continuar</button><button class="button" id="submit-request" type="submit" hidden>Registrar expediente</button></div><output role="alert"></output></form><aside class="form-sidebar"><h2>Antes de comenzar</h2><ul class="checklist"><li>${icon("check")}Datos personales completos y DNI.</li><li>${icon("check")}Celular y correo de contacto activos.</li><li>${icon("check")}Documento legible de hasta 10 MB.</li><li>${icon("check")}Área de destino y asunto de tu solicitud.</li></ul><p class="subtle">Al finalizar, guarda tu clave. La necesitarás para consultar y descargar las respuestas.</p><a class="text-button" href="#ayuda">Consultar orientación</a></aside></div>`
+  );
+}
+function readRequest(form) {
+  const d = new FormData(form);
+  return {
+    applicant: Object.fromEntries(
+      [
+        "names",
+        "lastName1",
+        "lastName2",
+        "dni",
+        "mobile",
+        "email",
+        "address",
+      ].map((k) => [k, d.get(k)]),
+    ),
+    subject: d.get("subject"),
+    description: d.get("description"),
+    type: d.get("type"),
+    number: d.get("number"),
+    area: d.get("area"),
+    folios: d.get("folios"),
+    consent: d.get("consent") === "on",
+  };
+}
+function setupRequest() {
+  let step = 0;
+  const form = document.getElementById("request-form");
+  const sections = [...form.querySelectorAll("[data-step]")];
+  const out = form.querySelector("output");
+  const move = (next) => {
+    step = next;
+    sections.forEach((s, i) => (s.hidden = i !== step));
+    form
+      .querySelectorAll(".wizard-tabs li")
+      .forEach((li, i) => li.classList.toggle("active", i === step));
+    document.getElementById("back-step").hidden = step === 0;
+    document.getElementById("next-step").hidden = step === 2;
+    document.getElementById("submit-request").hidden = step !== 2;
+    out.textContent = "";
+    sections[step].querySelector("input,select")?.focus();
+  };
+  document.getElementById("back-step").onclick = () => move(step - 1);
+  document.getElementById("next-step").onclick = () => {
+    try {
+      for (const input of sections[step].querySelectorAll(
+        "input,select,textarea",
+      ))
+        if (!input.reportValidity()) return;
+      const v = readRequest(form);
+      if (step === 0) validateApplicant(v.applicant);
+      else {
+        const file = new FormData(form).get("file");
+        validateRequest({ ...v, consent: true }, file);
+        document.getElementById("review").innerHTML = [
+          [
+            "Solicitante",
+            `${v.applicant.names} ${v.applicant.lastName1} ${v.applicant.lastName2}`,
+          ],
+          ["DNI", v.applicant.dni],
+          ["Celular", v.applicant.mobile],
+          ["Correo", v.applicant.email],
+          ["Domicilio", v.applicant.address],
+          ["Área de destino", v.area],
+          ["Tipo / folios", `${v.type} · ${v.folios} folio(s)`],
+          ["Archivo", file.name],
+          ["Asunto", v.subject],
+        ]
+          .map(([k, val]) => `<div><dt>${k}</dt><dd>${esc(val)}</dd></div>`)
+          .join("");
+      }
+      move(step + 1);
+    } catch (e) {
+      out.textContent = friendly(e);
     }
-    if (page === 'consulta') { setupConsult(); return; }
-    if (page === 'instituto') { main.innerHTML = institutionPage(); return; }
-    if (page === 'registro') { const program = programs.find(item => item.slug === id); main.innerHTML = formPage(program?.area); bindForm('new', register); return; }
-    if (page === 'exp') {
-      const record = await api('record/' + Number(id));
-      if (current !== version) return;
-      if (!record) { main.textContent = 'Expediente no encontrado.'; return; }
-      main.innerHTML = detail(record);
-      if (trackingKey.startsWith(record.id + '-')) {
-        const line = document.createElement('p');
-        line.className = 'tracking';
-        line.textContent = 'Clave de seguimiento · ' + trackingKey + ' · Guárdala para futuras consultas.';
-        const copy=document.createElement('button');copy.type='button';copy.className='light noprint';copy.textContent='Copiar clave';
-        copy.onclick=async()=>{try{await navigator.clipboard.writeText(trackingKey);copy.textContent='Clave copiada'}catch{copy.textContent='Selecciona la clave y cópiala'}};line.append(copy);
-        main.querySelector('.report').append(line);
-      }
-      if (!session.admin) {
-        document.getElementById('move').remove();
-        const back = main.querySelector('.link');
-        back.href = '#consulta';
-        back.textContent = '← Consultar otro trámite';
-      }
-      document.getElementById('print').onclick = () => window.print();
-      if (record.filename) document.getElementById('download').onclick = async () => {
+  };
+  form.elements.file.onchange = () => {
+    const f = form.elements.file.files[0];
+    try {
+      validateFile(f, true);
+      document.getElementById("file-info").textContent =
+        f.name + " · " + (f.size / 1024 / 1024).toFixed(2) + " MB";
+    } catch (e) {
+      document.getElementById("file-info").textContent = friendly(e);
+    }
+  };
+  form.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && step < 2 && e.target.tagName === "INPUT") {
+      e.preventDefault();
+      document.getElementById("next-step").click();
+    }
+  });
+  bind("request-form", async (d, f) => {
+    f.dataset.key ||= randomKey();
+    const r = await (
+      await cloud()
+    ).register(readRequest(f), d.get("file"), f.dataset.key);
+    remember(trackingKey(r));
+    location.hash = "seguimiento";
+  });
+}
+function lookup() {
+  return `<section class="lookup-intro narrow"><span class="icon-box">${icon("search")}</span><span class="eyebrow">Seguimiento de expedientes</span><h1>Consulta tu trámite</h1><p class="subtle">Ingresa la clave de tu cargo para ver el estado, las respuestas y los documentos disponibles.</p></section><form class="panel narrow" id="lookup-form"><div class="lookup-form"><label>Clave de seguimiento<input name="key" required spellcheck="false" autocomplete="off" placeholder="Copia la clave completa de tu cargo" value="${esc(lastKey)}"></label><button class="button" type="submit">Consultar</button></div><output role="alert"></output><p class="subtle section-gap">Tu clave es personal. Quien la conozca podrá consultar este trámite y descargar sus archivos.</p></form>`;
+}
+function responseList(r) {
+  return (r.responses || []).length
+    ? r.responses
+        .slice()
+        .reverse()
+        .map(
+          (x) =>
+            `<article class="reply"><div class="reply-meta"><strong>${esc(x.area)}</strong><span>${date(x.time)}</span></div><p>${esc(x.text || "Se adjunta el documento de respuesta.")}</p>${x.filename ? `<button type="button" class="button outline small" data-download="${x.id}">${icon("download")} ${esc(x.filename)}</button>` : ""}<small class="section-gap">Respuesta de ${esc(x.authorName)}</small></article>`,
+        )
+        .join("")
+    : `<div class="empty">${icon("inbox")}<p>Todavía no hay respuestas publicadas.<br>Consulta nuevamente con tu clave.</p></div>`;
+}
+function publicDetail(r) {
+  return `<div class="print-only"><strong>IESTP MANUEL SCORZA TORRE</strong><p>Av. Universitaria N.° 258 · Acobamba, Huancavelica</p></div><div class="record-top"><div><span class="eyebrow">Cargo de recepción y seguimiento</span><h1>${code(r)}</h1><span class="subtle">Registrado el ${date(r.time)}</span></div>${badge(r.state)}</div><div class="record-layout"><section><div class="panel"><h2>${esc(r.subject)}</h2><dl class="record-meta">${[
+    ["Solicitante", r.sender],
+    ["Tipo de documento", r.type],
+    ["Área responsable", r.area],
+    ["Número interno", r.internalNumber],
+  ]
+    .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`)
+    .join(
+      "",
+    )}</dl><div class="key-box"><strong>Tu clave de seguimiento</strong><code>${esc(trackingKey(r))}</code><p>Guárdala junto con tu cargo. No la compartas públicamente.</p><button id="copy-key" class="button white small" type="button">${icon("copy")} Copiar clave</button></div><div class="actions no-print"><button type="button" class="button" id="print-receipt">${icon("print")} Imprimir cargo / PDF</button>${r.filename ? `<button class="button outline" type="button" data-download="original">${icon("download")} Documento presentado</button>` : ""}</div><p class="subtle section-gap">La recepción del documento no implica conformidad ni aprobación de lo solicitado.</p></div><section class="panel section-gap"><div class="section-title" style="margin-top:0"><div><span class="eyebrow">Comunicación del área</span><h2>Respuestas y documentos</h2></div><span class="badge">${(r.responses || []).length} respuesta(s)</span></div>${responseList(r)}</section></section><aside class="panel"><h2>Estado del trámite</h2><ol class="timeline"><li><strong>Documento recibido</strong><small>${date(r.time)}</small></li><li><strong>${esc(r.state)}</strong><small>${esc(r.area)}</small><small>Actualizado: ${date(r.updatedAt || r.time)}</small></li></ol><div class="notice">Las respuestas se publican en esta consulta. Conserva la clave y revisa el avance de tu solicitud.</div><a href="#consulta">Consultar otro expediente</a></aside></div>`;
+}
+function bindDownloads(r) {
+  main.querySelectorAll("[data-download]").forEach(
+    (button) =>
+      (button.onclick = async () => {
+        button.disabled = true;
         try {
-          const url = await api('record/' + record.id + '/file');
-          const anchor = document.createElement('a');
-          anchor.href = url;
-          anchor.target = '_blank';
-          anchor.rel = 'noopener';
-          anchor.download = record.filename;
-          anchor.click();
-        } catch (error) { alert(friendlyError(error)); }
-      };
-      if (session.admin) bindForm('move', async (form, data) => {
-        const state = data.get('state'), area = data.get('area'), note = String(data.get('note') || '').trim();
-        if (state === record.state && area === record.area && !note) throw new Error('Cambia el estado, el área o agrega una observación.');
-        await api('record/' + record.id + '/move', { method: 'POST', body: JSON.stringify({ state, area, note, revision: record.log.length }) });
+          const response =
+            button.dataset.download === "original"
+              ? null
+              : r.responses.find((x) => x.id === button.dataset.download);
+          const blob = await (await cloud()).download(r, response);
+          save(blob, response?.filename || r.filename || "documento");
+        } catch (e) {
+          toast(friendly(e));
+        } finally {
+          button.disabled = false;
+        }
+      }),
+  );
+}
+function save(blob, name) {
+  const url = URL.createObjectURL(blob),
+    a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+function desk(content, active = "bandeja") {
+  return `<div class="desk-grid"><aside class="sidebar"><span class="role">${identity.role === "admin" ? "Administración" : "Atención por área"}</span><h2>${esc(identity.name)}</h2><p>${esc(identity.role === "admin" ? "Gestión documental institucional" : identity.area)}</p><nav aria-label="Herramientas del personal"><a href="#bandeja" class="${active === "bandeja" ? "active" : ""}">${icon("inbox")}Expedientes</a>${identity.role === "admin" ? `<a href="#personal" class="${active === "personal" ? "active" : ""}">${icon("users")}Cuentas por área</a><a href="#herramientas" class="${active === "herramientas" ? "active" : ""}">${icon("shield")}Administración</a>` : ""}<a href="#cuenta" class="${active === "cuenta" ? "active" : ""}">${icon("lock")}Mi cuenta</a></nav><hr><button type="button" id="logout" class="button white small">${icon("logout")} Cerrar sesión</button></aside><div class="desk-content">${content}</div></div>`;
+}
+function bindDesk() {
+  document.getElementById("logout")?.addEventListener("click", async () => {
+    try {
+      await (await cloud()).logout();
+      identity = { role: "public" };
+      header();
+      location.hash = "inicio";
+    } catch (e) {
+      toast(friendly(e));
+    }
+  });
+}
+function inbox(records) {
+  const count = (s) => records.filter((r) => r.state === s).length;
+  return desk(
+    heading(
+      "Bandeja de expedientes",
+      identity.role === "admin"
+        ? "Supervisa los trámites, asigna áreas y publica respuestas."
+        : "Documentos asignados a tu área de atención.",
+    ) +
+      `<div class="metrics"><div class="metric"><span>Expedientes</span><strong>${records.length}</strong></div><div class="metric active"><span>Recibidos</span><strong>${count("Recibido")}</strong></div><div class="metric"><span>En trámite</span><strong>${count("En trámite")}</strong></div><div class="metric complete"><span>Atendidos</span><strong>${count("Atendido")}</strong></div></div><section class="panel"><div class="filters"><label class="search">Buscar expediente<input id="search" type="search" placeholder="Número, asunto, nombre o DNI"></label><label>Estado<select id="filter-state"><option value="">Todos los estados</option>${options(STATES)}</select></label>${identity.role === "admin" ? `<label>Área<select id="filter-area"><option value="">Todas las áreas</option>${options(AREAS)}</select></label>` : ""}<button class="button outline small" id="export">${icon("download")} Exportar</button></div><div id="records-table"></div></section>`,
+  );
+}
+function setupInbox() {
+  const search = document.getElementById("search"),
+    state = document.getElementById("filter-state"),
+    area = document.getElementById("filter-area");
+  const filtered = () =>
+    cachedRecords.filter(
+      (r) =>
+        (!state.value || r.state === state.value) &&
+        (!area?.value || r.area === area.value) &&
+        [r.id, code(r), r.sender, r.subject, r.applicant?.dni]
+          .join(" ")
+          .toLocaleLowerCase("es")
+          .includes(search.value.trim().toLocaleLowerCase("es")),
+    );
+  const draw = () => {
+    const rows = filtered(),
+      pages = Math.max(1, Math.ceil(rows.length / 12));
+    pageNumber = Math.min(pageNumber, pages);
+    const slice = rows.slice((pageNumber - 1) * 12, pageNumber * 12);
+    document.getElementById("records-table").innerHTML = rows.length
+      ? `<div class="table-scroll"><table><thead><tr><th>Expediente</th><th>Solicitante / asunto</th><th>Área</th><th>Estado</th><th><span class="subtle">Detalle</span></th></tr></thead><tbody>${slice.map((r) => `<tr><td><strong>${code(r)}</strong><small>${date(r.time)}</small></td><td class="subject"><strong>${esc(r.sender)}</strong><small>${esc(r.subject)}</small></td><td><small>${esc(r.area)}</small></td><td>${badge(r.state)}</td><td><a class="button outline small" href="#exp/${r._key}">Abrir</a></td></tr>`).join("")}</tbody></table></div><div class="pager"><span>${rows.length} expediente(s) · Página ${pageNumber} de ${pages}</span><div><button class="button outline small" id="prev-page" ${pageNumber === 1 ? "disabled" : ""}>Anterior</button><button class="button outline small" id="next-page" ${pageNumber === pages ? "disabled" : ""}>Siguiente</button></div></div>`
+      : `<div class="empty">${icon("inbox")}<p>No se encontraron expedientes para estos filtros.</p></div>`;
+    document.getElementById("prev-page")?.addEventListener("click", () => {
+      pageNumber--;
+      draw();
+    });
+    document.getElementById("next-page")?.addEventListener("click", () => {
+      pageNumber++;
+      draw();
+    });
+  };
+  for (const e of [search, state, area].filter(Boolean))
+    e.addEventListener(e === search ? "input" : "change", () => {
+      pageNumber = 1;
+      draw();
+    });
+  document.getElementById("export").onclick = () =>
+    save(
+      new Blob([csv(filtered())], { type: "text/csv;charset=utf-8" }),
+      "expedientes.csv",
+    );
+  draw();
+}
+function staffDetail(r) {
+  const a = r.applicant;
+  return desk(
+    `<div class="breadcrumb"><a href="#bandeja">Bandeja</a> / ${code(r)}</div><div class="record-top"><div><h1>${code(r)}</h1><span class="subtle">${date(r.time)}</span></div>${badge(r.state)}</div><section class="panel"><h2>${esc(r.subject)}</h2><p class="subtle">${esc(r.type)} · ${r.folios} folio(s) · ${esc(r.area)}</p>${r.description ? `<p style="white-space:pre-wrap">${esc(r.description)}</p>` : ""}<dl class="record-meta"><div><dt>Solicitante</dt><dd>${esc(r.sender)}</dd></div><div><dt>DNI</dt><dd>${esc(a?.dni || "Sin dato en el expediente anterior")}</dd></div><div><dt>Celular</dt><dd>${a ? `<a href="tel:+51${esc(a.mobile)}">${esc(a.mobile)}</a>` : "Sin dato"}</dd></div><div><dt>Correo electrónico</dt><dd>${a ? `<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : "Sin dato"}</dd></div><div class="full"><dt>Domicilio</dt><dd>${esc(a?.address || "Sin dato")}</dd></div></dl>${r.filename ? `<button class="button outline" type="button" data-download="original">${icon("download")} ${esc(r.filename)}</button>` : ""}</section><section class="panel section-gap"><div class="tabs" role="tablist"><button class="selected" data-tab="reply" role="tab" aria-selected="true">Responder</button><button data-tab="move" role="tab" aria-selected="false">${identity.role === "admin" ? "Derivar / estado" : "Estado / nota"}</button><button data-tab="history" role="tab" aria-selected="false">Historial</button></div><div data-tabpanel="reply"><h2>Publicar respuesta al solicitante</h2><p class="hint">El mensaje y el documento serán visibles en su consulta de seguimiento.</p><form id="reply-form"><label>Respuesta<textarea name="text" maxlength="6000" rows="5" placeholder="Escribe la respuesta del área responsable"></textarea></label><label class="file-box section-gap">Documento de respuesta <small>Opcional</small><input name="file" type="file" accept=".pdf,.jpg,.jpeg,.png"><small>PDF, JPG o PNG · hasta 10 MB.</small></label><label class="section-gap">Estado después de responder<select name="state">${options(["En trámite", "Observado", "Atendido"], "Atendido")}</select></label><div class="actions"><button class="button" type="submit">${icon("send")} Publicar respuesta</button></div><output role="alert"></output></form></div><div data-tabpanel="move" hidden><h2>${identity.role === "admin" ? "Derivación y seguimiento" : "Actualizar el estado"}</h2><form id="move-form"><div class="fields"><label>Estado<select name="state">${options(STATES, r.state)}</select></label><label>Área de destino<select name="area" ${identity.role !== "admin" ? "disabled" : ""}>${options(AREAS, r.area)}</select></label><label class="full">Nota interna <small>No se publica al solicitante</small><textarea name="note" maxlength="1000"></textarea></label></div><div class="actions"><button type="submit" class="button">Guardar actualización</button></div><output role="alert"></output></form></div><div data-tabpanel="history" hidden><h2>Movimientos del expediente</h2><ol class="timeline">${r.log
+      .slice()
+      .reverse()
+      .map(
+        (x) =>
+          `<li><strong>${esc(x.state)} · ${esc(x.area)}</strong><small>${date(x.time)}</small></li>`,
+      )
+      .join("")}</ol><h3 class="section-gap">Notas internas</h3>${
+      Object.values(r.notes || {}).length
+        ? Object.entries(r.notes)
+            .reverse()
+            .map(
+              ([t, x]) =>
+                `<div class="notice"><p>${esc(typeof x === "string" ? x : x.text)}</p>${typeof x === "object" ? `<small>${esc(x.authorName)} · ${date(Number(t))}</small>` : ""}</div>`,
+            )
+            .join("")
+        : '<p class="subtle">Sin notas internas.</p>'
+    }</div></section><section class="panel section-gap"><h2>Respuestas publicadas</h2>${responseList(r)}</section>`,
+  );
+}
+function setupDetail(r) {
+  bindDesk();
+  bindDownloads(r);
+  main.querySelectorAll("[data-tab]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        main.querySelectorAll("[data-tab]").forEach((x) => {
+          x.classList.toggle("selected", x === b);
+          x.setAttribute("aria-selected", String(x === b));
+        });
+        main
+          .querySelectorAll("[data-tabpanel]")
+          .forEach((x) => (x.hidden = x.dataset.tabpanel !== b.dataset.tab));
+      }),
+  );
+  bind("reply-form", async (d, f) => {
+    f.dataset.response ||= randomKey();
+    await (
+      await cloud()
+    ).act(r._key, {
+      state: d.get("state"),
+      area: r.area,
+      text: d.get("text"),
+      file: d.get("file"),
+      responseId: f.dataset.response,
+      revision: r.log.length,
+      respond: true,
+    });
+    toast("Respuesta publicada. El solicitante puede verla con su clave.");
+    await render();
+  });
+  bind("move-form", async (d) => {
+    await (
+      await cloud()
+    ).act(r._key, {
+      state: d.get("state"),
+      area: d.get("area") || r.area,
+      note: d.get("note"),
+      revision: r.log.length,
+    });
+    toast("Expediente actualizado.");
+    await render();
+  });
+}
+function login() {
+  return `<div class="login-grid"><aside class="login-visual"><span class="eyebrow" style="color:#adc8f4">Personal autorizado</span><h2>Un espacio para atender mejor.</h2><p>Gestiona los documentos asignados a tu área y comunica las respuestas a los solicitantes.</p><img src="sede.webp" alt="Instituto Manuel Scorza Torre"></aside><section class="panel"><span class="icon-box">${icon("lock")}</span><h1 style="font-size:1.8rem;margin-top:22px">Acceso institucional</h1><p class="subtle">Ingresa con la cuenta asignada por administración.</p><form id="login-form"><label>Correo o usuario<input name="user" required autocomplete="username" placeholder="Correo del personal o usuario administrador"></label><label>Contraseña<input name="password" type="password" required autocomplete="current-password"></label><button type="submit" class="button">Ingresar</button><output role="alert"></output><button class="text-button" id="reset-password" type="button">Recuperar contraseña</button></form><p class="subtle section-gap">Para presentar documentos no necesitas una cuenta. <a href="#registro">Ir al formulario público</a>.</p></section></div>`;
+}
+function staffPage(list) {
+  return desk(
+    heading(
+      "Cuentas por área",
+      "Crea accesos individuales y asigna a cada persona su área de atención.",
+    ) +
+      `<section class="panel"><h2>Crear o vincular una cuenta</h2><form id="staff-form"><div class="fields">${field("Nombre del personal", "name", 'minlength="3" maxlength="120"')}${field("Correo de acceso", "email", 'type="email" maxlength="180"')}<label class="full">Área asignada <span class="required">*</span><select name="area">${options(AREAS)}</select></label><label class="full">Contraseña inicial<input name="password" type="password" minlength="12" autocomplete="new-password" placeholder="Al menos 12 caracteres"><small>Compártela directamente con la persona. Podrá cambiarla desde Mi cuenta.</small></label></div><details class="section-gap"><summary>Vincular una cuenta que ya existe en Firebase</summary><label class="section-gap">UID de Firebase Authentication<input name="uid" maxlength="128" autocomplete="off"><small>Solo si la cuenta ya existe. En este caso deja vacía la contraseña.</small></label></details><div class="actions"><button type="submit" class="button">Crear / vincular cuenta</button></div><output role="alert"></output></form></section><section class="panel section-gap"><h2>Personal autorizado <span class="badge">${list.length}</span></h2>${list.length ? list.map((u) => `<div class="staff-row ${u.active ? "" : "inactive"}" data-user="${esc(u.uid)}"><span class="avatar">${esc(u.name.slice(0, 1).toUpperCase())}</span><div class="staff-info"><strong>${esc(u.name)}</strong><small>${esc(u.email)}</small><small>${u.active ? "Acceso activo" : "Acceso desactivado"}</small></div><select aria-label="Área de ${esc(u.name)}" data-area>${options(AREAS, u.area)}</select><button class="button outline small" type="button" data-save-user>Guardar área</button><button class="button ${u.active ? "danger" : "soft"} small" data-active="${!u.active}" type="button">${u.active ? "Desactivar" : "Activar"}</button></div>`).join("") : '<div class="empty">Todavía no hay cuentas por área.</div>'}</section>`,
+    "personal",
+  );
+}
+function setupStaff(list) {
+  bindDesk();
+  bind("staff-form", async (d, f) => {
+    const result = await (
+      await cloud()
+    ).createStaff({
+      name: d.get("name"),
+      email: d.get("email"),
+      area: d.get("area"),
+      password: d.get("password"),
+      uid: d.get("uid").trim(),
+    });
+    f.reset();
+    toast("Cuenta asignada correctamente: " + result.email);
+    await render();
+  });
+  main.querySelectorAll("[data-user]").forEach((row) => {
+    const user = list.find((x) => x.uid === row.dataset.user);
+    const update = async (active, button) => {
+      button.disabled = true;
+      try {
+        await (
+          await cloud()
+        ).updateStaff(user.uid, {
+          area: row.querySelector("[data-area]").value,
+          active,
+        });
+        toast("Permisos actualizados.");
         await render();
+      } catch (e) {
+        toast(friendly(e));
+        button.disabled = false;
+      }
+    };
+    row.querySelector("[data-save-user]").onclick = (e) =>
+      update(user.active, e.currentTarget);
+    row.querySelector("[data-active]").onclick = (e) =>
+      update(e.currentTarget.dataset.active === "true", e.currentTarget);
+  });
+}
+function toolsPage() {
+  return desk(
+    heading(
+      "Administración",
+      "Herramientas para comprobar los servicios y conservar el seguimiento de expedientes anteriores.",
+    ) +
+      `<section class="panel"><h2>Comprobar conexiones</h2><p class="subtle">Verifica que respondan la base de datos y el depósito privado de archivos.</p><button class="button outline" id="diagnostics">Comprobar servicios</button><output id="diagnostic-output" role="status"></output></section><section class="panel section-gap"><h2>Habilitar seguimiento anterior</h2><p>Publica las vistas de seguimiento de los expedientes que ya existían antes de esta actualización. Conserva sus números y claves y excluye los datos de contacto y las notas internas.</p><p class="subtle">No modifica los documentos originales. Los adjuntos de servicios anteriores requieren su propia migración.</p><button class="button" id="migrate">Preparar seguimiento de expedientes</button><output id="migration-output" role="status"></output></section>`,
+    "herramientas",
+  );
+}
+function help() {
+  return (
+    heading(
+      "Orientación para tu trámite",
+      "Información para presentar tu solicitud y consultar la respuesta del instituto.",
+    ) +
+    `<div class="form-layout"><section class="faq">${[
+      [
+        "¿Qué datos necesito?",
+        "Nombres y apellidos, DNI de 8 dígitos, celular de 9 dígitos, correo electrónico y domicilio. También el área de destino, el asunto y el documento principal.",
+      ],
+      [
+        "¿Qué archivos puedo presentar?",
+        "Un documento principal en PDF, JPG o PNG de hasta 10 MB. Para un documento de varias páginas, reúne todas las páginas en un solo PDF legible.",
+      ],
+      [
+        "¿Dónde encuentro la respuesta?",
+        "En Consultar trámite, ingresa la clave de tu cargo. Allí aparecerán el estado actualizado, las respuestas del área y los archivos para descargar.",
+      ],
+      [
+        "¿Se envía una notificación por correo?",
+        "Esta versión publica las respuestas en la consulta del trámite. El correo y celular registrados permiten al personal contactarte; no se envían avisos automáticos.",
+      ],
+      [
+        "¿Necesito registrarme?",
+        "No. Los solicitantes presentan documentos sin crear una cuenta. Las cuentas institucionales son para el personal autorizado.",
+      ],
+      [
+        "¿Qué sucede si pierdo mi clave?",
+        "Comunícate con el instituto y solicita orientación, indicando el número de expediente. La clave no se recupera mediante una búsqueda pública por DNI.",
+      ],
+      [
+        "¿Registrar un documento significa que fue aprobado?",
+        "No. El cargo confirma la recepción. El área responsable evaluará la solicitud y publicará la respuesta correspondiente.",
+      ],
+    ]
+      .map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`)
+      .join(
+        "",
+      )}</section><aside class="form-sidebar"><h2>Contacto institucional</h2><p>Av. Universitaria N.° 258<br>Barrio Cocharcas, Acobamba</p><p><a href="tel:+51964159700">964 159 700</a></p><p class="subtle">Horario publicado: 8:00 a. m. – 4:00 p. m.</p><a href="https://iestmst.edu.pe/contacts/" target="_blank" rel="noopener noreferrer">Consultar contactos oficiales</a></aside></div>`
+  );
+}
+function privacy() {
+  return (
+    heading(
+      "Privacidad de los datos",
+      "Información sobre el uso de los datos en la mesa de partes.",
+    ) +
+    `<article class="panel privacy"><h2>Datos para atender tu solicitud</h2><p>El sistema solicita nombres, apellidos, DNI, celular, correo, domicilio y documentos para registrar, derivar y responder tu trámite. El personal autorizado de tu área de atención y la administración pueden acceder a esos datos.</p><h2>Consulta con una clave personal</h2><p>La consulta pública muestra el número, el nombre del solicitante, el asunto, el estado, el área responsable y las respuestas. No muestra el DNI, el celular, el correo, el domicilio ni las notas internas. Quien tenga la clave podrá consultar esta información y descargar los documentos.</p><h2>Conservación y contacto</h2><p>Conserva tu cargo y protege tu clave. Para solicitar información sobre tus datos o una corrección, comunícate con el instituto al <a href="tel:+51964159700">964 159 700</a> o acércate a Av. Universitaria N.° 258, Acobamba. La gestión y conservación de los expedientes corresponde a la institución.</p><a class="button outline" href="#registro">Volver a presentar documento</a></article>`
+  );
+}
+async function render() {
+  const current = ++routeId;
+  const [route = "inicio", key] = location.hash.replace(/^#/, "").split("/");
+  header();
+  try {
+    if (!route || route === "inicio") {
+      main.innerHTML = home();
+      return;
+    }
+    if (route === "registro") {
+      main.innerHTML = requestForm();
+      setupRequest();
+      return;
+    }
+    if (route === "consulta") {
+      main.innerHTML = lookup();
+      bind("lookup-form", async (d) => {
+        parseKey(d.get("key"));
+        const r = await (await cloud()).lookup(d.get("key"));
+        remember(trackingKey(r));
+        location.hash = "seguimiento";
       });
       return;
     }
-    if (!session.admin) { main.innerHTML = publicHome(); return; }
-    const rows = await api('records');
-    if (current !== version) return;
-    if (page !== 'bandeja') { main.innerHTML = home(rows); return; }
-    main.innerHTML = '<h1 class="page">Bandeja de expedientes</h1><div class="panel"><div class="filters"><label>Buscar expediente<input type="search" id="query" placeholder="N.º, referencia, asunto o remitente"></label><label>Estado<select id="filter">' + opts(['Todos', ...states], states[Number(id)]) + '</select></label><label>Área responsable<select id="area-filter"><option value="">Todas las áreas</option>' + destinationOptions() + '</select></label></div><p class="sub" id="count"></p><div id="list"></div></div>';
-    const q = document.getElementById('query'), filter = document.getElementById('filter'), areaFilter = document.getElementById('area-filter');
-    function apply() {
-      const norm = s => s.toLocaleLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const subset = rows.filter(r => (filter.value === 'Todos' || r.state === filter.value) && (!areaFilter.value || r.area === areaFilter.value) && norm([code(r), internalNumber(r), r.number, r.subject, r.sender].join(' ')).includes(norm(q.value.trim())));
-      document.getElementById('count').textContent = subset.length + (subset.length === 1 ? ' expediente' : ' expedientes');
-      document.getElementById('list').innerHTML = subset.map(entry).join('') || '<p class="empty">Sin expedientes para esta consulta.</p>';
+    if (route === "ayuda") {
+      main.innerHTML = help();
+      return;
     }
-    q.oninput = filter.onchange = areaFilter.onchange = apply;
-    apply();
+    if (route === "privacidad") {
+      main.innerHTML = privacy();
+      return;
+    }
+    if (route === "acceso" || route === "admin") {
+      main.innerHTML = login();
+      bind("login-form", async (d) => {
+        identity = await (
+          await cloud()
+        ).login(d.get("user"), d.get("password"));
+        header();
+        location.hash = "bandeja";
+      });
+      document.getElementById("reset-password").onclick = async () => {
+        const f = document.getElementById("login-form"),
+          user = f.elements.user.value;
+        if (!user.trim()) {
+          f.querySelector("output").textContent =
+            "Escribe tu correo de acceso o usuario antes de recuperar la contraseña.";
+          return;
+        }
+        try {
+          await (await cloud()).reset(user);
+          toast("Si la cuenta existe, recibirás instrucciones en su correo.");
+        } catch (e) {
+          f.querySelector("output").textContent = friendly(e);
+        }
+      };
+      return;
+    }
+    main.innerHTML =
+      '<div class="loading" role="status">Consultando información…</div>';
+    const api = await cloud();
+    if (route === "seguimiento") {
+      if (!lastKey) {
+        location.hash = "consulta";
+        return;
+      }
+      const r = await api.lookup(lastKey);
+      if (current !== routeId) return;
+      main.innerHTML = publicDetail(r);
+      bindDownloads(r);
+      document.getElementById("print-receipt").onclick = () => window.print();
+      document.getElementById("copy-key").onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(trackingKey(r));
+          toast("Clave copiada.");
+        } catch {
+          toast("Selecciona la clave del recuadro y cópiala.");
+        }
+      };
+      return;
+    }
+    identity = await api.session();
+    header();
+    if (!["admin", "area"].includes(identity.role)) {
+      location.hash = "acceso";
+      return;
+    }
+    if (current !== routeId) return;
+    if (route === "bandeja") {
+      const records = await api.records();
+      if (current !== routeId) return;
+      cachedRecords = records;
+      main.innerHTML = inbox(records);
+      bindDesk();
+      setupInbox();
+      return;
+    }
+    if (route === "exp") {
+      const r = await api.record(key);
+      if (current !== routeId) return;
+      main.innerHTML = staffDetail(r);
+      setupDetail(r);
+      return;
+    }
+    if (route === "personal" && identity.role === "admin") {
+      const users = await api.staff();
+      if (current !== routeId) return;
+      main.innerHTML = staffPage(users);
+      setupStaff(users);
+      return;
+    }
+    if (route === "herramientas" && identity.role === "admin") {
+      main.innerHTML = toolsPage();
+      bindDesk();
+      for (const [id, out, fn] of [
+        ["diagnostics", "diagnostic-output", () => api.diagnostics()],
+        [
+          "migrate",
+          "migration-output",
+          async () =>
+            `${await api.migrate()} expediente(s) con seguimiento preparado.`,
+        ],
+      ])
+        document.getElementById(id).onclick = async (e) => {
+          e.currentTarget.disabled = true;
+          const output = document.getElementById(out);
+          output.textContent = "Procesando…";
+          try {
+            output.textContent = await fn();
+          } catch (err) {
+            output.textContent = friendly(err);
+          } finally {
+            document.getElementById(id).disabled = false;
+          }
+        };
+      return;
+    }
+    if (route === "cuenta") {
+      main.innerHTML = desk(
+        heading(
+          "Mi cuenta",
+          "Actualiza tu contraseña de acceso institucional.",
+        ) +
+          `<section class="panel"><p><strong>${esc(identity.name)}</strong><br>${esc(identity.email)}</p><form id="password-form"><div class="fields">${field("Contraseña actual", "current", 'type="password" autocomplete="current-password"', true)}${field("Nueva contraseña", "next", 'type="password" autocomplete="new-password" minlength="12"', true)}${field("Confirmar nueva contraseña", "confirm", 'type="password" autocomplete="new-password" minlength="12"', true)}</div><p class="subtle section-gap">Usa al menos 12 caracteres y una contraseña que no compartas con otros servicios.</p><button class="button" type="submit">Actualizar contraseña</button><output role="alert"></output></form></section>`,
+        "cuenta",
+      );
+      bindDesk();
+      bind("password-form", async (d, f) => {
+        if (d.get("next") !== d.get("confirm"))
+          throw Error("Las contraseñas nuevas no coinciden.");
+        await api.password(d.get("current"), d.get("next"));
+        f.reset();
+        toast("Contraseña actualizada.");
+      });
+      return;
+    }
+    location.hash = "inicio";
   } catch (error) {
-    main.innerHTML = '<section class="panel narrow"><h2>No se pudo cargar la información</h2><p class="notice">' + esc(friendlyError(error)) + '</p><p>Comprueba que Firestore, Authentication y las reglas de seguridad estén configurados. Puedes volver al inicio sin perder esta página.</p><a class="link" href="#inicio">Volver al inicio →</a></section>';
+    if (current !== routeId) return;
+    main.innerHTML = `<section class="panel narrow"><span class="icon-box">${icon("help")}</span><h1 style="font-size:1.6rem;margin-top:20px">No se pudo completar la consulta</h1><p>${esc(friendly(error))}</p><div class="actions"><button id="retry" class="button">Volver a intentar</button><a href="#inicio" class="button outline">Ir al inicio</a></div></section>`;
+    document.getElementById("retry").onclick = render;
   }
 }
-
-function showConnectionStatus() {
-  const bar = document.getElementById('accessbar');
-  if (!bar) return;
-  bar.hidden = !session.admin;
-  bar.innerHTML = session.admin ? '<strong>Administrador conectado</strong><span><button id="logout" class="light">Cerrar sesión</button></span>' : '';
-  document.getElementById('logout')?.addEventListener('click', async () => {
-    try { await api('logout', { method: 'POST' }); trackingKey = ''; try{sessionStorage.removeItem('mst-tracking')}catch{} await start(); location.hash = 'inicio'; }
-    catch (error) { alert(friendlyError(error)); }
-  });
-  const inbox = document.getElementById('inbox');
-  if (inbox) inbox.hidden = !session.admin;
-}
-
-async function navigate() {
-  await render();
-  showConnectionStatus();
-  window.scrollTo(0, 0);
-}
-window.addEventListener('hashchange', navigate);
-
-async function start() {
-  try {
-    await waitForFirebase();
-    ensureFirebase();
-    await refreshSession();
-    connected = true;
-    firebaseInitError = '';
-  } catch (error) {
-    connected = false;
-    session = { admin: false, signedIn: false };
-    firebaseInitError = friendlyError(error);
-  }
-  showConnectionStatus();
-  if(session.admin) await render();
-}
+window.addEventListener("hashchange", () => {
+  render();
+  window.scrollTo({ top: 0, behavior: "instant" });
+});
 render();
-start();
-
-function helpSection(){return `<section class="how"><div class="sectionhead"><div><span class="eyebrow">Un proceso sencillo</span><h2>Tu trámite, paso a paso</h2></div></div><ol class="steps"><li><b>01</b><h3>Prepara tu documento</h3><p>Indica el asunto, el remitente y el área de destino. Puedes adjuntar un PDF, JPG o PNG de hasta 10 MB.</p></li><li><b>02</b><h3>Guarda tu cargo</h3><p>Recibirás un número automático y una clave de seguimiento. Imprime el cargo o guárdalo como PDF.</p></li><li><b>03</b><h3>Consulta el avance</h3><p>Usa tu clave para conocer el estado y el área responsable de tu expediente.</p></li></ol></section><section class="faq"><h2>Antes de presentar tu documento</h2><details><summary>¿Necesito crear una cuenta?</summary><p>No. El registro y la consulta son públicos. Solo el personal autorizado inicia sesión.</p></details><details><summary>¿Qué significa que mi documento esté recibido?</summary><p>El sistema confirmó el registro. No significa que la solicitud haya sido aprobada o atendida.</p></details><details><summary>¿Cómo protejo mi clave de seguimiento?</summary><p>Guárdala con tu cargo. Quien tenga esa clave podrá consultar el expediente y su adjunto.</p></details></section>`}
+cloud()
+  .then((api) => api.session())
+  .then((me) => {
+    identity = me;
+    header();
+  })
+  .catch(() => {});

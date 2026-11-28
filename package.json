@@ -1,1 +1,24 @@
-{"name":"mesa-partes-manuel-scorza","version":"5.0.0","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"start":"node scripts/serve.mjs","check":"node --check docs/app.js && node --check docs/firebase-config.js && node --check scripts/serve.mjs && node --test tests/*.test.mjs"}}
+{
+  "name": "mesa-partes-manuel-scorza",
+  "version": "8.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "check": "node --check docs/app.js && node --check docs/data.js && node --check docs/domain.js && node --check supabase/functions/adjuntos/handler.mjs && node --check supabase/functions/adjuntos/firebase-access.mjs && node --test tests/*.test.mjs",
+    "configurar:supabase": "node scripts/configurar-supabase.mjs",
+    "publicar:supabase": "node scripts/publicar-supabase.mjs",
+    "build:firebase": "node scripts/build-firebase.mjs",
+    "test:rules": "firebase emulators:exec --project demo-mesa-tests --only firestore \"node validation/check.cjs\"",
+    "dev": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "firebase": "13.4.0",
+    "esbuild": "0.28.2",
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase-tools": "15.37.0"
+  }
+}

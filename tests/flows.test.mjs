@@ -1,25 +1,234 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import vm from 'node:vm';
-import {readFile} from 'node:fs/promises';
-import {webcrypto} from 'node:crypto';
-const original=await readFile(new URL('../docs/app.js',import.meta.url),'utf8');
-function harness(){
- const data=new Map(),nodes=new Map();
- const node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,innerHTML:'',textContent:'',dataset:{},setAttribute(){},removeAttribute(){},querySelector(){return node(id+'-child')},addEventListener(){}});return nodes.get(id)};
- const snap=k=>({exists:()=>data.has(k),data:()=>structuredClone(data.get(k)),id:k.split('/')[1]});
- const context=vm.createContext({console,setTimeout,clearTimeout,crypto:webcrypto,File,FormData,Uint8Array,Date,
- document:{querySelector:()=>node('main'),getElementById:node,querySelectorAll:()=>[]},window:{addEventListener(){},scrollTo(){}},location:{hash:'#inicio',pathname:'/'},sessionStorage:{getItem(){return null}},firebaseConfig:{},ADMIN_USERNAME:'joel',ADMIN_EMAIL:'joel@test',
- mocks:{doc:(_,a,b)=>a+'/'+b,getDoc:async k=>snap(k),collection:(_,c)=>c,where:(...x)=>x,query:(...x)=>x,
- getDocs:async q=>{const rows=[...data].filter(([k,v])=>k.startsWith('expedientes/')&&v.id===q[1][2]);return {empty:!rows.length,docs:rows.map(([k])=>snap(k))}},
- runTransaction:async(_,fn)=>{const writes=[];const result=await fn({get:async k=>snap(k),set:(k,v)=>writes.push([k,v]),update:(k,v)=>writes.push([k,{...data.get(k),...v}])});for(const[k,v]of writes)data.set(k,structuredClone(v));return result}}});
- const source=original.replace(/^import .*firebase-config.js';\n/m,'').replace(/^initializeFirebase\(\);$/m,'').replace(/^render\(\);\nstart\(\);$/m,'');vm.runInContext(source,context);
- vm.runInContext('({doc,getDoc,getDocs,collection,where,query,runTransaction}=mocks);db={};firebaseReady=true;authReadyResolve();',context);
- return {data,context,nodes,run:code=>vm.runInContext(code,context)};
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createService } from "../docs/data.js";
+import { publicRecord, validateApplicant, csv } from "../docs/domain.js";
+function setup(health = { ok: true, version: 8 }) {
+  const docs = new Map(),
+    auth = { currentUser: null },
+    uploads = [];
+  const snapshot = (k) => ({
+    exists: () => docs.has(k),
+    data: () => structuredClone(docs.get(k)),
+    id: k.split("/")[1],
+  });
+  const s = {
+    doc: (_, c, id) => c + "/" + id,
+    collection: (_, c) => c,
+    where: (...v) => v,
+    query: (c, w) => ({ c, w }),
+    getDoc: async (k) => snapshot(k),
+    getDocs: async (q) => ({
+      docs: [...docs]
+        .filter(
+          ([k, v]) =>
+            k.startsWith((q.c || q) + "/") && (!q.w || v[q.w[0]] === q.w[2]),
+        )
+        .map(([k]) => snapshot(k)),
+    }),
+    setDoc: async (k, v) => docs.set(k, structuredClone(v)),
+    updateDoc: async (k, v) => docs.set(k, { ...docs.get(k), ...v }),
+    runTransaction: async (_, fn) => {
+      const pending = [];
+      await fn({
+        get: async (k) => snapshot(k),
+        set: (k, v) => pending.push([k, v]),
+        update: (k, v) => pending.push([k, { ...docs.get(k), ...v }]),
+      });
+      for (const [k, v] of pending) docs.set(k, structuredClone(v));
+    },
+  };
+  const api = createService(s, {
+    auth,
+    db: {},
+    config: {},
+    endpoint: "https://test.supabase.co/functions/v1/adjuntos",
+    request: async (url, options) => {
+      uploads.push({ url, options });
+      return Response.json(url.endsWith("/health") ? health : { ok: true });
+    },
+  });
+  const user = (uid, area) => {
+    auth.currentUser = {
+      uid,
+      email: uid + "@example.invalid",
+      getIdToken: async () => uid + ".jwt",
+    };
+    docs.set("staff/" + uid, { role: "area", area, name: uid, active: true });
+  };
+  return { api, docs, auth, s, uploads, user };
 }
-function form(){const f=new FormData();for(const[k,v]of Object.entries({subject:'Certificado',sender:'Remitente de prueba',type:'Solicitud',number:'',area:'Mesa de partes',folios:'1'}))f.set(k,v);return f}
-test('Registro sin cuenta y reintento sin duplicación',async()=>{const h=harness();h.context.input=form();h.context.key='a'.repeat(32);const r=await h.run('registerDocument(input,key)');assert.equal(r.id,1);assert.equal(h.data.get('registroVinculo/actual').token,h.context.key);await h.run('registerDocument(input,key)');assert.equal(h.data.get('config/counter').value,1)});
-test('Datos inválidos no consumen correlativo',async()=>{const h=harness();h.context.input=form();h.context.input.set('folios','0');await assert.rejects(h.run('registerDocument(input)'));assert.equal(h.data.size,0)});
-test('Consulta con clave y bloqueo de bandeja pública',async()=>{const h=harness();h.context.input=form();h.context.key='b'.repeat(32);await h.run('registerDocument(input,key)');await assert.rejects(h.run("api('records')"));await assert.rejects(h.run('findRecord(1)'));h.run("trackingKey='1-'+key");assert.equal((await h.run('findRecord(1)')).sender,'Remitente de prueba')});
-test('Notas fuera del documento público y conflicto de revisión',async()=>{const h=harness();h.context.input=form();h.context.key='c'.repeat(32);await h.run('registerDocument(input,key)');h.run('session.admin=true');const call=`api('record/1/move',{method:'POST',body:JSON.stringify({state:'En trámite',area:'Secretaría',note:'Privada',revision:1})})`;await h.run(call);assert.equal(h.data.get('expedientes/'+h.context.key).log[1].note,'');assert.equal(h.data.get('notasInternas/'+h.context.key).notes['1'],'Privada');await assert.rejects(h.run(call))});
-test('Portada y navegación sin conexión',async()=>{const h=harness();h.run('firebaseReady=false');for(const[route,text]of [['#inicio','Tus trámites'],['#registro','Datos del documento'],['#consulta','Consultar mi trámite'],['#admin','Acceso de administrador'],['#instituto','Reseña histórica']]){h.context.location.hash=route;await h.run('render()');assert(h.nodes.get('main').innerHTML.includes(text))}});
+const input = () => ({
+  applicant: {
+    names: "Joel",
+    lastName1: "Prueba",
+    lastName2: "Ejemplo",
+    dni: "12345678",
+    mobile: "912345678",
+    email: "persona@example.invalid",
+    address: "Domicilio de prueba 123",
+  },
+  subject: "Certificado de estudios",
+  description: "Solicitud",
+  type: "Solicitud",
+  number: "",
+  area: "Secretaría",
+  folios: 1,
+  consent: true,
+});
+const file = () =>
+  new File(["%PDF-1.7 prueba"], "solicitud.pdf", { type: "application/pdf" });
+test("Diagnóstico distingue la función anterior y comprueba la versión de respuestas", async () => {
+  const old = setup({ ok: true });
+  old.auth.currentUser = { uid: "admin" };
+  old.docs.set("admins/admin", { role: "admin" });
+  await assert.rejects(old.api.diagnostics(), /otra versión/);
+  const current = setup();
+  current.auth.currentUser = { uid: "admin" };
+  current.docs.set("admins/admin", { role: "admin" });
+  assert.match(await current.api.diagnostics(), /respondieron correctamente/);
+});
+test("Registro completo crea vista pública sin datos de contacto y reintento idempotente", async () => {
+  const h = setup(),
+    key = "a".repeat(32);
+  const r = await h.api.register(input(), file(), key);
+  assert.equal(r.id, 1);
+  assert.equal(h.docs.get("expedientes/" + key).applicant.dni, "12345678");
+  const pub = h.docs.get("seguimiento/" + key);
+  for (const f of [
+    "applicant",
+    "dni",
+    "mobile",
+    "email",
+    "address",
+    "description",
+    "log",
+  ])
+    assert(!(f in pub));
+  await h.api.register(input(), file(), key);
+  assert.equal(h.docs.get("config/counter").value, 1);
+  assert.equal(h.uploads.length, 1);
+  assert.equal((await h.api.lookup("1-" + key)).id, 1);
+});
+test("Datos obligatorios y archivo se validan antes de consumir número o cargar", async () => {
+  const h = setup();
+  for (const [name, value] of [
+    ["dni", "123"],
+    ["mobile", "456"],
+    ["email", "x"],
+    ["lastName2", ""],
+  ]) {
+    const v = input();
+    v.applicant[name] = value;
+    await assert.rejects(h.api.register(v, file()));
+  }
+  await assert.rejects(h.api.register(input(), null));
+  assert.equal(h.docs.size, 0);
+  assert.equal(h.uploads.length, 0);
+});
+test("Bandeja del área consulta solo su área; cambio de área se rechaza", async () => {
+  const h = setup(),
+    key = "b".repeat(32);
+  await h.api.register(input(), file(), key);
+  await h.api.register(
+    { ...input(), area: "Administración" },
+    file(),
+    "c".repeat(32),
+  );
+  h.user("area", "Secretaría");
+  assert.equal((await h.api.records()).length, 1);
+  await assert.rejects(h.api.record("c".repeat(32)));
+  await assert.rejects(
+    h.api.act(key, { state: "Atendido", area: "Administración", revision: 1 }),
+  );
+});
+test("Respuesta con adjunto se publica y el reintento no duplica respuestas", async () => {
+  const h = setup(),
+    key = "d".repeat(32),
+    reply = "f".repeat(32);
+  await h.api.register(input(), file(), key);
+  h.user("area", "Secretaría");
+  const action = {
+    state: "Atendido",
+    area: "Secretaría",
+    text: "Respuesta para el solicitante",
+    file: file(),
+    responseId: reply,
+    revision: 1,
+    respond: true,
+  };
+  await h.api.act(key, action);
+  assert.equal(h.docs.get("seguimiento/" + key).responses.length, 1);
+  assert.equal(h.uploads.at(-1).options.headers["X-Response-Id"], reply);
+  assert(h.uploads.at(-1).options.headers.Authorization);
+  await h.api.act(key, action);
+  assert.equal(h.docs.get("seguimiento/" + key).responses.length, 1);
+  assert.equal(h.uploads.length, 2);
+});
+test("Notas se mantienen privadas y revisión concurrente bloquea cambios", async () => {
+  const h = setup(),
+    key = "e".repeat(32);
+  await h.api.register(input(), file(), key);
+  h.user("area", "Secretaría");
+  await h.api.act(key, {
+    state: "En trámite",
+    area: "Secretaría",
+    note: "Nota interna",
+    revision: 1,
+  });
+  assert(h.docs.get("notasInternas/" + key));
+  assert(
+    !JSON.stringify(h.docs.get("seguimiento/" + key)).includes("Nota interna"),
+  );
+  await assert.rejects(
+    h.api.act(key, { state: "Atendido", area: "Secretaría", revision: 1 }),
+    /Otro usuario/,
+  );
+});
+test("Alta secundaria mantiene la sesión de administración", async () => {
+  const h = setup();
+  h.auth.currentUser = { uid: "admin" };
+  h.docs.set("admins/admin", { role: "admin" });
+  let created = 0,
+    deleted = 0;
+  const secondaryAuth = {};
+  Object.assign(h.s, {
+    initializeApp: () => ({ name: "secondary" }),
+    initializeAuth: () => secondaryAuth,
+    inMemoryPersistence: {},
+    createUserWithEmailAndPassword: async () => {
+      created++;
+      return { user: { uid: "nuevo" } };
+    },
+    updateProfile: async () => {},
+    signOut: async (auth) => assert.equal(auth, secondaryAuth),
+    deleteApp: async () => {
+      deleted++;
+    },
+    deleteUser: async () => {},
+  });
+  await h.api.createStaff({
+    name: "Persona del área",
+    email: "nueva@example.invalid",
+    area: "Secretaría",
+    password: "Prueba-larga-123",
+  });
+  assert.equal(h.auth.currentUser.uid, "admin");
+  assert.equal(created, 1);
+  assert.equal(deleted, 1);
+  assert.equal(h.docs.get("staff/nuevo").role, "area");
+  assert(!("password" in h.docs.get("staff/nuevo")));
+});
+test("CSV neutraliza fórmulas y exporta solo los registros recibidos", () => {
+  assert(
+    csv([
+      {
+        id: 1,
+        time: Date.now(),
+        sender: '=HYPERLINK("mal")',
+        subject: "x",
+        area: "Secretaría",
+        state: "Recibido",
+      },
+    ]).includes('" =HYPERLINK'),
+  );
+});

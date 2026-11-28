@@ -1,9 +1,25 @@
-CORRECCIÓN: GITHUB MUESTRA LAS INSTRUCCIONES EN VEZ DEL PORTAL
+MESA DE PARTES MANUEL SCORZA TORRE · VERSIÓN 8.0.0
 
-1. Extrae este ZIP.
-2. En tu repositorio mesa-de-partes, sube el contenido extraído. index.html debe estar junto a README.md, no dentro de otra carpeta.
-3. Conserva la carpeta docs con sus archivos, imágenes y configuración Firebase.
-4. Settings > Pages > Deploy from a branch > main > /(root) > Save.
-5. Espera a que GitHub termine de publicar y actualiza con Ctrl+F5.
+Actualización de tu proyecto: Firebase + Supabase Storage + GitHub Pages.
+La configuración pública existente está conservada. No crees otro proyecto.
 
-El nuevo index.html abre el portal automáticamente. No necesitas cambiar Firebase para corregir la portada. Para registrar y gestionar expedientes, deben seguir activados los servicios y las reglas descritos en README.md.
+1. Extrae este ZIP en una carpeta nueva y ábrela en Visual Studio Code.
+2. Publica TODO firestore.rules de esta versión en Firebase → Firestore → Reglas.
+3. Conserva el bucket privado mesa-partes-adjuntos de Supabase.
+4. En la raíz del proyecto ejecuta:
+   npx.cmd --yes supabase@3.4.0 login
+   npm.cmd run publicar:supabase
+5. Ejecuta npm.cmd start y abre http://127.0.0.1:8787.
+6. Ingresa como joel con tu contraseña actual.
+7. Administración → Preparar seguimiento de expedientes.
+8. Cuentas por área → crea las cuentas reales de tu personal.
+9. Sube el contenido completo de esta versión a GitHub, incluido docs/vendor.
+10. Prueba un registro con todos los datos y archivo, una respuesta con adjunto
+    y su descarga desde una ventana privada usando la clave del cargo.
+
+No se crean cuentas de personal ni se cambian contraseñas automáticamente.
+El documento principal ahora es obligatorio. El ciudadano no crea una cuenta.
+No se ha desplegado esta actualización en tus cuentas desde esta entrega.
+
+README.md contiene las instrucciones completas y soluciones a errores.
+VERIFICACION.md indica qué se probó antes de entregar el código.

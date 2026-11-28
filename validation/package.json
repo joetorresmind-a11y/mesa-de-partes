@@ -2,7 +2,7 @@
   "name": "mesa-rules-tests",
   "private": true,
   "scripts": {
-    "test": "firebase emulators:exec --project demo-mesa-tests --only firestore,storage \"node check.cjs\""
+    "test": "firebase emulators:exec --config ../firebase.json --project demo-mesa-tests --only firestore \"node check.cjs\""
   },
   "devDependencies": {
     "firebase": "13.4.0",
